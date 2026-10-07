@@ -190,7 +190,7 @@ const SubagentParamProperties = {
 	topic: Type.Optional(Type.String()),
 	message: Type.Optional(Type.String({ description: "resume/steer guidance or project.open prompt." })),
 	mode: Type.Optional(Type.String({ enum: ["steer", "follow_up", "auto", "plan", "apply"], description: "steer delivery; worktree.cleanup plan/apply (reviewed planId)." })),
-	steeringRecovery: Type.Optional(Type.Boolean({ description: "steer: pause/revive after missed acknowledgment; default true in direct steer mode, forced false by extension RPC for exact ownership." })),
+	steeringRecovery: Type.Optional(Type.Boolean({ description: "steer: pause/revive after a missed acknowledgment; default true, forced false over RPC." })),
 	additional: Type.Optional(Type.Integer({ minimum: 1, description: "grant-spawn-budget: root interactive parent + native user confirmation only; total grants capped at original configured cap." })),
 	scope: Type.Optional(Type.String({ enum: ["session", "user", "project"], description: "watchdog.configure scope; default session, persistent only if explicit." })),
 	target: Type.Optional(Type.String({ enum: ["main", "children", "child"], description: "Watchdog target." })),
@@ -222,7 +222,7 @@ const SubagentParamProperties = {
 	})),
 	workflow: Type.Optional(Type.Unsafe<string | true>({
 		anyOf: [{ type: "boolean" }, { type: "string", minLength: 1 }],
-		description: "true: run the one ```js workflow block written in this same reply (false invalid). String with '/': script file read from request cwd. Other string: named workflow resource. Raw scripts (true or path) have no runs.host.",
+		description: "true: run the ```js workflow block in this reply. String with '/' or '\\': script path read from cwd. Other string: named resource. Raw scripts have no runs.host.",
 	})),
 	args: Type.Optional(Type.Unsafe({ type: "object", maxProperties: MAX_ARGS_FIELDS, additionalProperties: true, description: `Plain-JSON args for workflow; ${MAX_ARGS_FIELDS} fields/object, ${MAX_ARGS_ITEMS} items/array, depth ${MAX_ARGS_DEPTH}, ${MAX_ARGS_BYTES / 1024} KiB total; raw-script args are exposed deeply frozen and persisted, so do not include secrets.` })),
 	globalConcurrencyLimit: Type.Optional(Type.Integer({ minimum: 1 })),
@@ -235,12 +235,12 @@ const SubagentParamProperties = {
 	lane: Type.Optional(WorkflowLaneMetadata),
 	context: Type.Optional(Type.String({
 		enum: ["fresh", "fork", "profile"],
-		description: "fresh/fork overrides every child; profile requires agent's declared defaultContext, ignoring config. Omitted: defaultSubagentContext wins over each agent defaultContext; implicit fork needs persisted parent + leaf, else fresh. forkContext may prune forks before spawn.",
+		description: "fresh/fork override every child; profile uses the agent's defaultContext. Omitted: defaultSubagentContext, then agent defaultContext. fork needs a persisted parent, else fresh.",
 	})),
 	async: Type.Optional(Type.Boolean({ description: "Background; default asyncByDefault. false only to block parent." })),
-	timeoutMs: Type.Optional(Type.Integer({ minimum: 1, description: "Foreground and single async runs use config timeoutMs, else 30m; async composites have no default parent deadline. Alias maxRuntimeMs; must agree." })),
+	timeoutMs: Type.Optional(Type.Integer({ minimum: 1, description: "Deadline: config timeoutMs, else 30m for foreground and single async runs; none for async composites. Alias maxRuntimeMs; must agree." })),
 	maxRuntimeMs: Type.Optional(Type.Integer({ minimum: 1, description: "Alias timeoutMs (same defaults)." })),
-	checkpointBeforeDeadlineMs: Type.Optional(Type.Integer({ minimum: 1, maximum: 2_147_483_647, description: "Async single-agent runs only: the runner requests that the child checkpoint and stop this many ms before the run deadline (best-effort; the deadline kill still applies)." })),
+	checkpointBeforeDeadlineMs: Type.Optional(Type.Integer({ minimum: 1, maximum: 2_147_483_647, description: "Async single-agent runs only: ask the child to checkpoint and stop this many ms before the deadline (best-effort)." })),
 	toolTimeoutMs: Type.Optional(Type.Integer({ minimum: 1, description: "Per-tool deadline (ms); fast builtins default 5m." })),
 	toolBudget: Type.Optional(ToolBudgetOverride),
 	usageBudget: Type.Optional(UsageBudgetOverride),
@@ -274,7 +274,7 @@ const SubagentParamProperties = {
 			{ type: "string", minLength: 1 },
 			{ type: "object", properties: { command: { type: "string", minLength: 1 }, output: { type: "string", enum: ["json"] }, schema: { type: "object" }, timeoutMs: { type: "integer", minimum: 1 } }, required: ["command"], additionalProperties: false },
 		],
-		description: "Host gate command run after the child finishes: a string, or an object; with output \"json\", passing stdout becomes structuredOutput (not with outputSchema). Cannot be combined with acceptance except false (treated as omitted).",
+		description: "Host command run after the child: string or object; output \"json\" makes stdout structuredOutput (not with outputSchema). Cannot be combined with acceptance except false.",
 	})),
 };
 

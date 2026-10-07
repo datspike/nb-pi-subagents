@@ -193,10 +193,10 @@ describe("SubagentParams schema", { skip: !schemasAvailable ? "typebox not avail
 		assert.match(description, /fresh/);
 		assert.match(description, /fork/);
 		assert.match(description, /profile/);
-		assert.match(description, /declared defaultContext/);
-		assert.match(description, /defaultSubagentContext wins over each agent defaultContext/);
-		assert.match(description, /overrides every child/);
-		assert.match(description, /implicit fork/);
+		assert.match(description, /agent's defaultContext/);
+		assert.match(description, /Omitted: defaultSubagentContext, then agent defaultContext/);
+		assert.match(description, /override every child/);
+		assert.match(description, /fork needs a persisted parent/);
 		assert.match(description, /else fresh/);
 	});
 
@@ -204,9 +204,9 @@ describe("SubagentParams schema", { skip: !schemasAvailable ? "typebox not avail
 		const workflow = SubagentParams?.properties?.workflow;
 		assert.equal(hasAnyOfType(workflow, "boolean"), true);
 		assert.equal(anyOfBranches(workflow).find((branch) => branch.type === "string")?.minLength, 1);
-		assert.match(String(workflow?.description ?? ""), /true: run the one ```js workflow block written in this same reply/);
-		assert.match(String(workflow?.description ?? ""), /String with '\/': script file read from request cwd/);
-		assert.match(String(workflow?.description ?? ""), /Other string: named workflow resource/);
+		assert.match(String(workflow?.description ?? ""), /true: run the ```js workflow block in this reply/);
+		assert.match(String(workflow?.description ?? ""), /String with '\/' or '\\': script path read from cwd/);
+		assert.match(String(workflow?.description ?? ""), /Other string: named resource/);
 		assert.match(String(workflow?.description ?? ""), /no runs.host/);
 		const args = SubagentParams?.properties?.args;
 		assert.equal(args?.type, "object");
@@ -311,11 +311,11 @@ describe("SubagentParams schema", { skip: !schemasAvailable ? "typebox not avail
 		assert.equal(timeoutSchema.minimum, 1);
 		assert.equal(maxRuntimeSchema.minimum, 1);
 		assert.match(String(timeoutSchema.description ?? ""), /foreground and single async runs/i);
-		assert.match(String(timeoutSchema.description ?? ""), /use config timeoutMs, else 30m/i);
-		assert.match(String(timeoutSchema.description ?? ""), /async composites have no default parent deadline/i);
+		assert.match(String(timeoutSchema.description ?? ""), /config timeoutMs, else 30m/i);
+		assert.match(String(timeoutSchema.description ?? ""), /none for async composites/i);
 		assert.doesNotMatch(String(timeoutSchema.description ?? ""), /foreground-only/i);
 		assert.match(String(maxRuntimeSchema.description ?? ""), /timeoutMs/i);
-		assert.match(String(maxRuntimeSchema.description ?? ""), /Alias timeoutMs \(same defaults\)/);
+		assert.match(String(maxRuntimeSchema.description ?? ""), /Alias timeoutMs/);
 		assert.equal(turnBudgetSchema, undefined);
 		assert.equal(toolBudgetSchema?.properties?.soft?.minimum, 1);
 		assert.equal(toolBudgetSchema?.properties?.hard?.minimum, 1);
