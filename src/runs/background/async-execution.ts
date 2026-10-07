@@ -406,15 +406,12 @@ export function formatAsyncStartedMessage(headline: string, interactive: boolean
 	const guidance = interactive
 		? [
 			"The async run is detached and running in the background.",
-			"You are in an interactive session. Return control to the user now; Pi will wake you through the native completion notification when this subagent completes or needs attention. Do not run sleep/polling loops to wait for this async subagent; it does not need a wait call.",
-			"Use bg_wait only for provider, detached, or other background work that lacks a native completion notification.",
-			"If the current turn must receive results from work without a native notification before it ends, call blocking bg_wait(); ordinary async subagent runs do not need a wait call because their completion is delivered natively.",
-			"Otherwise, continue any independent work or return control to the user. Use subagent({ action: \"status\", id: \"...\" }) for a one-shot status/result or to inspect a blocked/stale run, never as a wait loop.",
+			"End your turn now: Pi wakes this session when it completes or needs attention. Do not sleep, poll or call bg_wait for it; bg_wait is only for work with no completion notification.",
+			"Continue independent work if there is any. Use subagent({ action: \"status\", id: \"...\" }) only for a one-shot look at a blocked or stale run.",
 		]
 		: [
-			"The async run is detached. Do not run sleep timers or polling loops just to wait for it.",
-			"This is a non-interactive run: Pi auto-drains current-session subagent work at agent_end so detached children are not abandoned. Use bg_wait only when this turn must receive provider, detached, or other background-work results that have no native completion notification.",
-			"Use subagent({ action: \"status\", id: \"...\" }) when you need a one-shot status/result or to inspect a blocked/stale run; do not poll in a loop.",
+			"The async run is detached. This is a non-interactive run: Pi auto-drains current-session subagent work at agent_end. Do not sleep or poll for it.",
+			"Use bg_wait only when this turn needs results from provider, detached, or other background work with no native completion notification. Use subagent({ action: \"status\", id: \"...\" }) only for a one-shot look at a blocked or stale run.",
 		];
 	return [headline, "", ...guidance].join("\n");
 }
