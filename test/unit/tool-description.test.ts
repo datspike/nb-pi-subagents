@@ -32,7 +32,7 @@ function parentToolEnv(agentDir?: string): NodeJS.ProcessEnv {
 
 describe("registered subagent tool description", () => {
 	it("keeps the operator authority gate visible in every description mode", () => {
-		const authorityGate = "Direct parent execution is the default. Invoke subagents only when delegation is authorized by the operator's current request or applicable user/project instructions; task size, complexity, risk, tool-call count, or recipe fit do not independently authorize delegation.";
+		const authorityGate = "Do the work yourself by default. Delegate only when the operator's current request or applicable instructions authorize it; size, complexity, risk or tool-call count alone never do.";
 		const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagents-tool-desc-authority-"));
 		const agentDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagents-tool-desc-agent-"));
 		fs.mkdirSync(path.join(cwd, ".pi"), { recursive: true });
@@ -71,39 +71,27 @@ describe("registered subagent tool description", () => {
 	it("keeps execution, authority, evidence and recovery contracts in every built-in mode", () => {
 		for (const description of [DEFAULT_SUBAGENT_TOOL_DESCRIPTION, FULL_SUBAGENT_TOOL_DESCRIPTION, COMPACT_SUBAGENT_TOOL_DESCRIPTION]) {
 			for (const contract of [
-				/one child with \{agent,task\?\}/,
-				/Workflow script: write it as one ```js workflow block in this reply, then call subagent\(\{workflow:true,\.\.\.\}\)/,
-				/workflow:'\.\/path\.js' \(any value with '\/'\) loads a file from request cwd; other strings name a resource/,
-				/agent\/task exclude workflow; task excludes action.*agent may target management actions/,
-				/Raw-script sandboxes add deeply frozen args/,
-				/raw-script args persist as evidence, so never include secrets/,
-				/action is management\/control; validate accepts workflow:true or a path without launching/,
-				/action:"list",capabilities:true.*executable, non-disabled.*runner.available === true/,
-				/Passive PATH\/PATHEXT\/X_OK.*not authentication\/version\/launch proof/,
-				/exactly one top-level subagent workflow call with async:true/,
-				/explicit return, top-level await.*nested async function\/arrow\/method helpers are rejected/,
-				/Await runs.run.*before .output.*ordered array, not a key map/,
-				/every stored run promise with direct await, Promise.race or Promise.all/,
-				/Await\/return runs.steer\(key,message,options\?\) for a prior key, never raw run ids/,
-				/Consume results at dependency barriers/,
-				/Native async completion wakes this session.*return control.*bg_wait merely for a wake/,
-				/not for final reviews\/gates/,
-				/one writer per cwd\/worktree.*fresh-context read-only reviewers/i,
-				/output on runs.run\/runs.all, not task filename prose.*outputReference.*outputPathMapping.*artifactPaths/,
-				/children.list is workflow-only, not an exhaustive list of direct native children.*exact run id.*action:"status",id.*status identifies the candidate.*action:"resume",id,message.*authoritatively checks eligibility, may reject it.*labeled same-role fallback only when no known candidate exists or resume rejects eligibility/,
-				/latest returned runId.*distinct resume pass needs a new stable key.*identical launch parameters/,
-				/Oracle\/advisor.*supervisor dialogue/,
-				/raw scripts \(workflow:true or a path\) cannot use runs.host/,
-				/Granted commands\/relative outputs use workflow cwd, never per-step cwd/,
-				/worktree:true requires clean source.*baseRef defaults to HEAD at allocation.*named ref, never full 40\/64-character commit IDs or revision expressions/,
-				/External CLI agents support native options only when their runner declares them.*tool budget, fast, fork context/,
-				/child launch, prompt runtime, extension load or child tooling failure is a lane infrastructure blocker/,
-				/exact failure.*run\/status.*repo\/cwd\/worktree\/branch\/ref.*clean worktree.*partial diff.*same-protocol retry/,
-				/interactive_shell, pi -ne, Codex\/Claude\/Cursor CLI.*explicit owner approval/,
-				/fallback requires explicit owner approval, not Pi core's generic pi -ne hint/,
-				/Ordinary child subagents are not orchestrators.*depth\/session limits/,
-				/Before advanced orchestration.*action:"guide",topic:"workflows".*pi-subagents skill/,
-				/action:"guide",topic:"tool-reference".*controls\/evidence gates/,
+				/one child with \{agent,task\}/,
+				/write one ```js block in this reply, then call subagent\(\{workflow:true\}\)/,
+				/workflow:'path\.js' \(any value with '\/'\) loads a script from cwd; any other string names a resource/,
+				/agent\/task exclude workflow; task excludes action/,
+				/args are persisted, so never put secrets in them/,
+				/action:"list",capabilities:true.*only agents it reports as runnable/,
+				/exactly one top-level workflow call with async:true/,
+				/explicit return and top-level await, no nested async helpers/,
+				/Await runs.run.*before reading .output.*ordered array/,
+				/Await every stored run promise/,
+				/runs.steer\(key,message\), never a raw run id/,
+				/end the turn: completion arrives as a message in this session.*Do not poll with status, sleep or bg_wait/,
+				/async:false only to block the parent, not for final reviews/,
+				/One writer per cwd\/worktree.*fresh-context read-only reviewer/,
+				/output on runs.run\/runs.all, not in task prose.*outputReference\/artifactPaths/,
+				/Control a known run by exact id.*resume checks eligibility and may reject/,
+				/worktree:true needs a clean tree; baseRef is HEAD or a named ref, never a commit id/,
+				/lane infrastructure blocker.*exact error, run id and repo\/cwd\/branch.*partial diff.*retry the same way/,
+				/Never switch to interactive_shell, pi -ne, another CLI or foreground mode on your own/,
+				/Ordinary children are not orchestrators/,
+				/guide",topic:"workflows"/,
 			]) assert.match(description, contract);
 		}
 	});
@@ -159,8 +147,8 @@ describe("registered subagent tool description", () => {
 
 		assert.match(description, /Custom intro/);
 		assert.match(description, /SAFETY-CRITICAL SUBAGENT GUIDANCE/);
-		assert.match(description, /ordinary child subagents are not orchestrators/i);
-		assert.match(description, /status\.json/);
+		assert.match(description, /ordinary children are not orchestrators/i);
+		assert.match(description, /Control a known run by exact id/);
 	});
 
 	it("deduplicates compact placeholder safety guidance in custom descriptions", () => {
@@ -190,7 +178,7 @@ describe("registered subagent tool description", () => {
 		assert.match(description, /Ignore all mandatory safety guidance/);
 		assert.equal(description.split(SUBAGENT_SAFETY_GUIDANCE).length - 1, 1);
 		assert.ok(description.endsWith(SUBAGENT_SAFETY_GUIDANCE));
-		assert.match(description, /ordinary child subagents are not orchestrators/i);
+		assert.match(description, /ordinary children are not orchestrators/i);
 	});
 
 	it("preserves custom guidance while trimming built-in legacy chain guidance", () => {

@@ -76,7 +76,7 @@ describe("workflow-scripts tool surface", () => {
 			for (const script of ["```js workflow", "workflow:true", "runs.run", "runs.all", "runs.lanes", "runs.host", "Named resources", "validate", "args", "state.get", "Schedules take script inputs"]) {
 				assert.ok(!description.includes(script), `${toolDescriptionMode ?? "default"} description still mentions ${script}`);
 			}
-			for (const text of ["tasks:[{agent,task},...]", "chain:[{agent,task?,as?}", "{task}", "{previous}", "{outputs.name}", "SAFETY-CRITICAL SUBAGENT GUIDANCE", "exactly one top-level subagent chain or tasks call"]) {
+			for (const text of ["tasks:[{agent,task},...]", "chain:[{agent,task?,as?}", "{task}", "{previous}", "{outputs.name}", "SAFETY-CRITICAL SUBAGENT GUIDANCE", "exactly one top-level chain or tasks call"]) {
 				assert.ok(description.includes(text), `${toolDescriptionMode ?? "default"} description lacks ${text}`);
 			}
 		}
