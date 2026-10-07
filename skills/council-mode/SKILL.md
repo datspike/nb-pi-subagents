@@ -11,7 +11,7 @@ The parent selects the roster, relays only curated claims, decides validity, and
 
 Before launch, read:
 
-- `skills/pi-subagents/references/execution-controls.md`
+- `guide/tool-reference.md` (`subagent({ action: "guide", topic: "tool-reference" })`)
 - `skills/council-mode/references/pass-contracts.md`
 
 ## Roster

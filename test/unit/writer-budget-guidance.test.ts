@@ -7,19 +7,13 @@ const readProjectFile = (file: string): string => readFileSync(join(process.cwd(
 
 describe("writer budget guidance", () => {
 	it("keeps hard tool and usage caps off mutation-capable workers", () => {
-		const toolReference = readProjectFile("docs/tool-reference.md");
-		const skill = readProjectFile("skills/pi-subagents/SKILL.md");
+		const toolReference = readProjectFile("guide/tool-reference.md");
 		const reviewLoop = readProjectFile("prompts/review-loop.md");
 
-		for (const text of [toolReference, skill, reviewLoop]) {
-			assert.match(text, /As a conservative orchestration policy, do not (?:pass|set) a hard `toolBudget`/);
-			assert.match(text, /default tool budget blocks read\/search tools rather than mutation tools/i);
-			assert.match(text, /checkpoint after the current tool returns/);
-			assert.match(text, /changed files/);
-			assert.match(text, /build\/test state/);
-			assert.match(text, /commit or PR state/);
-		}
-		assert.match(toolReference, /elapsed timeout is not a mutation-safe boundary/i);
+		assert.match(toolReference, /A deadline is not a mutation-safe boundary/);
+		assert.match(toolReference, /Do not use hard tool or usage caps as a safety boundary for mutation-capable writers/);
+		assert.match(toolReference, /`toolBudget` blocks configured tools after the hard count/);
+		assert.match(reviewLoop, /As a conservative orchestration policy, do not (?:pass|set) a hard `toolBudget`/);
+		assert.match(reviewLoop, /checkpoint after the current tool returns/);
 	});
-
 });

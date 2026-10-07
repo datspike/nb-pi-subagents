@@ -25,7 +25,7 @@ const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "
 const COUNCIL_FILES = [
 	"skills/council-mode/SKILL.md",
 	"skills/council-mode/references/pass-contracts.md",
-	"skills/pi-subagents/references/execution-controls.md",
+	"guide/tool-reference.md",
 ];
 
 function isGuideTopic(value: string): value is SubagentGuideTopic {
