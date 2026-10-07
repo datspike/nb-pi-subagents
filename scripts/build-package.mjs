@@ -17,7 +17,7 @@ const staticFiles = [
 	"CHANGELOG.md",
 	"LICENSE",
 ];
-const expectedDirectories = ["agents", "skills", "prompts", "docs"];
+const expectedDirectories = ["agents", "skills", "prompts", "docs", "guide"];
 
 for (const relativePath of [
 	...expectedRootModules,

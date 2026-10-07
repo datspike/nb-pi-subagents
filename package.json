@@ -53,6 +53,7 @@
     "skills/**/*",
     "prompts/**/*",
     "docs/**/*",
+    "guide/**/*",
     "README.md",
     "CHANGELOG.md"
   ],

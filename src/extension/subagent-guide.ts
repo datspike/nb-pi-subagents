@@ -36,7 +36,7 @@ export function readSubagentGuide(topic = "overview", root = packageRoot): strin
 	if (!isGuideTopic(topic)) {
 		return `Unknown subagents guide topic '${topic}'. Valid topics: ${SUBAGENT_GUIDE_TOPICS.join(", ")}. No files were changed.`;
 	}
-	const files = topic === "overview" ? ["README.md"] : topic === "council" ? COUNCIL_FILES : [path.join("docs", `${topic}.md`)];
+	const files = topic === "council" ? COUNCIL_FILES : [path.join("guide", `${topic}.md`)];
 	try {
 		const contents = files.map((file) => fs.readFileSync(path.join(root, file), "utf-8"));
 		return files.length === 1 ? contents[0]! : contents.map((content, index) => `<!-- ${files[index]} -->\n\n${content}`).join("\n\n");
