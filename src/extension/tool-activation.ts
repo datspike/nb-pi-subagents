@@ -99,7 +99,7 @@ export function registerSubagentToolActivation(
 		name: LOADER_NAME,
 		...MODEL_ONLY_TOOL,
 		label: "Enable Subagents",
-		description: "Enable pi-subagents delegation and management tools without launching work. Call when delegation is authorized by the current request or applicable user/project instructions, or when managing existing runs. Direct execution is the default; complexity alone never authorizes delegation. Full tools are available on the next model request.",
+		description: "Enable the subagent tools without launching work. Call only when delegation is authorized or to manage existing runs. Tools are available on the next model request.",
 		promptSnippet: "pi-subagents is installed. For authorized specialist, independent-review, or parallel work, call subagents_enable, then subagent. Authorization must come from the current request or applicable instructions; complexity alone is not authorization.",
 		parameters,
 		async execute() {
