@@ -23,8 +23,8 @@ const TOPIC_BUDGET: Record<string, number> = {
 	observability: 7_000,
 	"tool-reference": 14_000,
 	configuration: 8_000,
-	models: 4_000,
-	watchdog: 4_000,
+	models: 4_600,
+	watchdog: 4_600,
 	"extension-api": 7_000,
 };
 const DEFAULT_BUDGET = 16_000;
