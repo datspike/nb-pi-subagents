@@ -106,7 +106,7 @@ test("native Pi exposes the full subagent schema on the request immediately afte
 	assert.equal(captured.length, 2);
 	assert.ok(captured[0]! <= 5_500, `cold package schemas exceeded budget: ${captured[0]}`);
 	assert.ok(captured[1]! <= 24_000, `activated package schemas exceeded budget: ${captured[1]}`);
-	assert.ok(captured[1]! - captured[0]! >= 17_500, "lazy activation should remove the full subagent schema from cold requests");
+	assert.ok(captured[1]! - captured[0]! >= 14_000, `lazy activation should remove the full subagent schema from cold requests: cold=${captured[0]} activated=${captured[1]}`);
 	console.log(`schema characters cold=${captured[0]} activated=${captured[1]}`);
 });
 

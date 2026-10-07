@@ -212,7 +212,7 @@ describe("SubagentParams schema", { skip: !schemasAvailable ? "typebox not avail
 		assert.equal(args?.type, "object");
 		assert.equal(args?.maxProperties, 16);
 		assert.match(String(args?.description ?? ""), /plain-JSON args for workflow; 16 fields\/object, 64 items\/array, depth 8, 16 KiB total;/i);
-		assert.match(String(args?.description ?? ""), /raw-script.*deeply frozen.*persisted.*secrets/i);
+		assert.match(String(args?.description ?? ""), /frozen and persisted.*no secrets/i);
 		for (const name of ["globalConcurrencyLimit", "maxSubagentSpawnsPerRun"] as const) {
 			const capacity = SubagentParams?.properties?.[name];
 			assert.equal(capacity?.type, "integer");
@@ -268,8 +268,7 @@ describe("SubagentParams schema", { skip: !schemasAvailable ? "typebox not avail
 		assert.equal(actionSchema.minLength, 1);
 		assert.equal(actionSchema.enum, undefined);
 		const description = String(actionSchema.description ?? "");
-		assert.match(description, /Management\/control only; omit for execution/);
-		assert.match(description, /validate accepts workflow: true or a script path/);
+		assert.match(description, /Management\/control only; omit to launch/);
 		assert.match(description, /guide topic tool-reference/);
 		assert.doesNotMatch(description, /orchestration\./);
 	});

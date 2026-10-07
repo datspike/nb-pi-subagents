@@ -19,7 +19,7 @@ const safetyGuidance = (on: FeatureText) => `SAFETY-CRITICAL SUBAGENT GUIDANCE:
 • Do the work yourself by default. Delegate only when the operator's current request or applicable instructions authorize it; size, complexity, risk or tool-call count alone never do.
 • ${AGENT_SELECTION_GUIDANCE}
 • ${SUBAGENT_FAILURE_RECOVERY_GUIDANCE}
-• Omit action to launch. Multi-step or parallel work is exactly one top-level ${on("workflow-scripts", "workflow call with async:true; children launch only inside it", "chain or tasks call with async:true")}.
+• Omit action to launch. One child is {agent,task}; multi-step or parallel work is exactly one top-level ${on("workflow-scripts", "workflow call with async:true (children launch inside it)", "chain or tasks call with async:true")}.
 • Launch is async by default. After it, end the turn: completion arrives as a message in this session. Do not poll with status, sleep or bg_wait to check on it; bg_wait is only for provider/detached work with no completion message that you need this turn. async:false only to block the parent, not for final reviews.
 • One writer per cwd/worktree; isolate concurrent writers. For independent review use a fresh-context read-only reviewer, then synthesize and fix yourself. Ordinary children are not orchestrators.
 • Bind durable output ${on("workflow-scripts", "on runs.run/runs.all", "with output")}, not in task prose; report the returned outputReference/artifactPaths, evidence and residual risks.
