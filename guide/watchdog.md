@@ -40,6 +40,10 @@ If a launch is blocked, do not retry unchanged: select a model matching `allow`,
 
 Enable child reviews with `subagents.watchdog.children.enabled`. Child `model` and `thinking` set defaults; `children.overrides.<agent>` can set `enabled`, `model`, `thinking`, or `cadence`. Cadence reviews use `cadence.everyNTools`; values below 5 are rejected. A child override takes precedence over child defaults, which take precedence over top-level `cadence`.
 
+## Native child tool permissions
+
+Opt-in, native Pi children only. Rules map a tool to `allow`, `ask`, or `deny`: globally in extension `config.json` under `permissions.rules`, per agent in `permission:`/`permissions:` frontmatter (agent overrides global). Unlisted tools are allowed. `bash` rules are rejected (use `pi-guard`). `ask` sends a redacted preview to a one-call arbiter that returns approve/deny; a disabled watchdog, missing model/auth, timeout, or error denies the call. Launches with effective `ask`/`deny` rules are rejected for external CLI agents.
+
 ## React to findings
 
 A finding has severity `concern` or `blocker`, and importance `low`, `medium`, or `high`. Low/medium findings are retained for the user; only high-importance findings are delivered to the model. Treat `blocker` as a stop condition: address the evidence, rerun the relevant check, and do not claim completion while the issue remains. A repeated identical boundary warning reaches `stalemate` after `stalemateRepeats` (default 3); continuation then stops. Start a new user prompt after fixing the issue.

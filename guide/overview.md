@@ -19,8 +19,8 @@ Use this map when deciding which guide to read before a delegation call. It is a
 The parent is the current Pi session and remains the orchestrator and decision maker. A child is a focused Pi session launched with its own `agent` and `task`; ordinary children do the assigned work, not orchestration. Delegate only when the operator's request or applicable instructions authorize it.
 
 1. **One child:** omit `action` and provide `agent` plus `task`. Execution controls such as `cwd`, `model`, `output`, `acceptance`, and `async` apply to that launch. Use one writer per cwd/worktree; isolate concurrent writers.
-2. **Workflow script:** put a ` ```js ` workflow block in the same reply and call `subagent({workflow:true})`. Inside it, use `runs.run(key, {agent, task})` for a child or `runs.all([{key, agent, task}, ...])` for ordinary parallel fanout. Await every launch before reading its result or returning. A workflow child cannot start another workflow or management action.
-3. **Existing runs:** provide `action` to inspect or control a known run. Use `action` values such as `status`, `steer`, `interrupt`, `stop`, and `resume`; target the exact `id` when controlling a run. Use `view:"transcript"` to inspect a transcript. Management actions do not launch a new child.
+2. **Workflow script:** put a ` ```js ` workflow block in the same reply and call `subagent({workflow:true})`. Inside it, use `runs.run(key, {agent, task})` for a child or `runs.all([{key, agent, task}, ...])` for ordinary parallel fanout. Await every launch before reading its result or returning. `runs.run` cannot start a nested workflow or management action.
+3. **Existing runs:** provide `action` to inspect or control a known run. Use `action` values such as `status`, `steer`, `interrupt`, `stop`, and `resume`; target the exact `id` when controlling a run. Use `view:"transcript"` to inspect a transcript. Inspection and control actions do not launch a child; `schedule.run` and `schedule.run-due` do (async).
 
 ## Async completion
 

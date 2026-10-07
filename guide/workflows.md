@@ -4,7 +4,7 @@ Use this guide when writing a `workflowScript`: choose the right orchestration p
 
 ## Start a workflow script
 
-Put one JavaScript body in a ` ```js workflow ` block in the same reply as `subagent({ workflow: true })`, or pass a script path containing `/` (read relative to the request `cwd`). Any other string is a named workflow resource. Raw scripts (`workflow: true` or a path) cannot use `runs.host`; named resources may grant it. `agent` and `task` are for one direct child and cannot be combined with `workflow`.
+Put one JavaScript body in a ` ```js workflow ` block in the same reply as `subagent({ workflow: true })`, or pass a script path containing `/` or `\` (read relative to the request `cwd`). Any other string is a named workflow resource, except `"true"`, which is treated as `true`. Raw scripts (`workflow: true` or a path) cannot use `runs.host`; named resources may grant it. `agent` and `task` are for one direct child and cannot be combined with `workflow`.
 
 The script is ordinary statements with an explicit `return`. Use top-level `await`; do not define nested `async` functions, async arrows, or async methods. A plain helper returning `runs.run(...)` is valid. The sandbox has no filesystem, shell, arbitrary Pi tools, or host globals. `console.log`, `console.info`, `console.warn`, and `console.error` are captured as workflow console output.
 
@@ -15,7 +15,7 @@ return runs.run("review", { agent: "reviewer", task: "Review these facts:\n" + s
 
 ## Launch one child or ordinary fanout
 
-Use `runs.run(key, params)` for one child or a sequential/conditional step. `key` must be 1–128 characters, start with a letter or number, and contain only letters, numbers, `.`, `_`, or `-`. `params` is one-child execution data: normally `agent` plus a non-empty `task`, or a retained `resume` plus a non-empty follow-up `task`. `resume` and `agent` are mutually exclusive. Await the result before reading `.output`.
+Use `runs.run(key, params)` for one child or a sequential/conditional step. `key` must be 1–128 characters, start with a letter or number, and contain only letters, numbers, `.`, `_`, or `-`. `params` is one-child execution data: normally `agent` plus a non-empty `task`, or a retained `resume` plus a non-empty follow-up `task`. `resume` and `agent` are mutually exclusive. Await the result before reading `.output`. Do not pass `async: true` when later steps need the output: it returns only a dispatch receipt (`state: "running"`, `ok: false`, empty output).
 
 Use `await runs.all([{ key, agent, task }, ...])` for independent fanout. It returns an ordered array, not a key map: use indexes, destructuring, or `.map`; `results.someKey` is rejected. Passing already-launched `runs.run(...)` promises is permissive but loses batch validation, batch grouping, and failure collection; pass configuration objects for normal fanout. A failed child in normal `runs.all` is returned with `ok: false` rather than being silently treated as success.
 

@@ -37,6 +37,6 @@ Use `mission.close` when done. `missionStatus` must be `completed`, `failed`, or
 
 Schedules are rejected while `scheduledRuns.enabled` is `false`. Manage them with `schedule.create`, `schedule.list`, `schedule.show`, `schedule.history`, `schedule.pause`, `schedule.resume`, `schedule.run`, `schedule.run-due`, and `schedule.delete`.
 
-A schedule accepts only an existing `missionId`; creation and updates are unsupported. Creation validates the mission in the target project store; each fire re-resolves it and fails before execution if missing or invalid. Mission-bound definitions use schema version 2; older readers must reject them. Fires are async with fresh context.
+`missionId` is optional; if given it must reference an existing mission (the schedule cannot create or update missions). Creation validates the mission in the target project store; each fire re-resolves it and fails before execution if missing or invalid. Mission-bound definitions use schema version 2; older readers must reject them. Fires are async with fresh context.
 
 `mission.close` does not pause future fires: use `schedule.pause` or `schedule.delete`. Schedules do not protect missions from terminal retention; a later fire can reactivate a non-goal terminal mission. Only `overlap: "skip"` and `catchUp: "latest"` or `"none"` are supported. Disable schedules through `scheduledRuns.enabled`, not `disabledFeatures`.

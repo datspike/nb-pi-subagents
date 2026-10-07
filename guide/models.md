@@ -4,12 +4,12 @@ Use this guide when selecting a child model, diagnosing model resolution, or con
 
 ## Choose a model
 
-Before passing `model`, call `subagent({ action: "models" })` and copy an exact `provider/id` from the session registry. A bare id is accepted only when unique; a qualified provider query never silently switches providers. Separator, case, and trailing-date differences may fuzzy-match, but exact `provider/id` is safest. Use `subagent({ action: "models", agent: "worker" })` to inspect one agent's effective model, source, thinking, and current session model.
+Before passing `model`, call `subagent({ action: "models" })` and copy an exact `provider/id` from the session registry (native Pi children only; Claude Code adapters take their own CLI aliases/ids, optionally with a `:level` suffix). A bare id is accepted only when unique; a qualified provider query never silently switches providers. Separator, case, and trailing-date differences may fuzzy-match, but exact `provider/id` is safest. Use `subagent({ action: "models", agent: "worker" })` to inspect one agent's effective model, source, thinking, and current session model.
 
 Model selection precedence is:
 
 1. Per-run `model`.
-2. The selected agent's model (frontmatter or `agentOverrides.<name>.model`).
+2. The selected agent's model: `agentOverridesByProvider.<provider>.<name>.model` for the active provider, then `agentOverrides.<name>.model`, then frontmatter.
 3. `subagents.defaultModel`.
 4. The current parent session model.
 
@@ -17,7 +17,7 @@ Model selection precedence is:
 
 ## Set thinking
 
-Append one supported thinking suffix to the model: `:off`, `:minimal`, `:low`, `:medium`, `:high`, `:xhigh`, or `:max` (for example, `openai-codex/gpt-5.6-luna:high`). The suffix overrides the agent thinking default. Otherwise use the run `thinking`/agent setting; `thinking: false` disables the configured default. A `maxThinking` ceiling rejects a request above the configured ceiling before startup.
+Append one supported thinking suffix to the model: `:off`, `:minimal`, `:low`, `:medium`, `:high`, `:xhigh`, or `:max` (for example, `openai-codex/gpt-5.6-luna:high`). The suffix overrides the agent thinking default. Otherwise use the run `thinking`/agent setting; `thinking: false` disables the configured default. A `subagents.maxThinking` ceiling (Pi settings) rejects a request above the configured ceiling before startup.
 
 ## Restrict models
 

@@ -4,7 +4,7 @@ Use this guide when choosing an execution mode or controlling a run: workflows, 
 
 ## Start one child or a workflow
 
-For one direct child, provide `agent` and `task`. For orchestration, put a ` ```js workflow ` block in the reply and call `subagent({ workflow: true })`. Use `runs.run(key, params)` for sequential or conditional work and `runs.all([{key, agent, task}, ...])` for ordinary parallel fanout. `runs.all` returns an ordered array, not a key map; consume indexes, destructuring, or `.map`, and await every launched promise. Do not use legacy top-level `chain`, `tasks`, or `parallel` unless `workflow-scripts` is disabled; that configuration exposes the structured replacement.
+For one direct child, provide `agent` and `task`. For orchestration, put a ` ```js workflow ` block in the reply and call `subagent({ workflow: true })`. Use `runs.run(key, params)` for sequential or conditional work and `runs.all([{key, agent, task}, ...])` for ordinary parallel fanout. `runs.all` returns an ordered array, not a key map; consume indexes, destructuring, or `.map`, and await every launched promise. Top-level `parallel` is always rejected. Top-level `chain` and `tasks` are accepted only when `workflow-scripts` is disabled; `parallel` then works only inside a `chain` step.
 
 A workflow string containing `/` is a script path, resolved relative to the request `cwd`; another string is a named resource. Named resources are the permission-aware path, for example `{ workflow: "run-ci", args: { command: "npm test" } }`. Named workflows cannot be combined with `agent` or `task` at the top level. Raw scripts (`workflow: true` or a script path) have unknown resource provenance and cannot call `runs.host`. In governed workflows, named resources own authority; issued commands and relative output paths use the workflow `cwd`. There is no per-step `cwd`; set it on the outer request or change directory in the command.
 
@@ -79,7 +79,7 @@ A workflow receipt and its status artifacts are authoritative for what was sched
 
 ## Governed workflow and lane evidence
 
-Use lane evidence only when a workflow's existing handoff manifest gives the exact `laneId` (the owning `runId`) and `handoffPath`. `lane.status` reports `active`, `terminal-eligible`, `terminal-blocked`, `superseded-eligible`, or `unknown` and prints a cleanup plan invocation; it does not run cleanup. `lane.recordMerge` and `lane.recordSupersession` attest facts at an explicit update boundary; stale lane ids, conflicting heads, malformed evidence, or later manifest changes fail closed. `worktree.cleanup` separately plans with `mode: "plan"` and applies only a reviewed `planId`; do not infer ownership or delete a worktree from prose.
+Use lane evidence only when a workflow's existing handoff manifest gives the exact `laneId` (the owning `runId`) and `handoffPath`. `lane.status` reports `active`, `terminal-eligible`, `terminal-blocked`, `superseded-eligible`, or `unknown` and prints a cleanup plan invocation; it does not run cleanup. `lane.recordMerge` and `lane.recordSupersession` only record the caller's attestation at an explicit update boundary (no Git/GitHub verification, no cleanup); stale lane ids, conflicting heads, malformed evidence, or later manifest changes fail closed. `worktree.cleanup` separately plans with `mode: "plan"` and applies only a reviewed `planId`; do not infer ownership or delete a worktree from prose.
 
 ## Escalate unknowns
 

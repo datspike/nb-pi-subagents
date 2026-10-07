@@ -34,6 +34,10 @@ Methods are `ping`, `status`, `manage`, `spawn`, `steer`, `interrupt`, `stop`, `
 - `manage` accepts only `schedule.list`, `schedule.show`, `schedule.history`, `schedule.pause`, `schedule.resume`, `schedule.run`, and `schedule.delete`; every action except `schedule.list` requires `id`. Other management surfaces are rejected.
 - `cost` is read-only and returns the parent/child accounting report. Request it at a turn boundary, not on a timer.
 
+## Choose the seam
+
+RPC `spawn` is detached and async-only. For one synchronous foreground leaf agent with a typed (text or structured) result, use the structured delegation API (`pi-subagents/delegation`, `prompt-template:subagent:*` events); it is foreground-only and needs an active extension context.
+
 ## Read status safely
 
 A successful `status` reply includes `fleet` and, when available, `asyncSnapshot`.

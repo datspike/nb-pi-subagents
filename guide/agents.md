@@ -65,7 +65,7 @@ To remove all bundled roles from discovery, set `subagents.disableBuiltins: true
 
 ## Use external CLI agents
 
-Define a local command with `runner.type: external-cli`, a non-empty `command`, optional string `args`, and optional `promptDelivery: stdin`. The other supported runner types are `pi` and `external-job`; external runners reject Pi-only fields such as `tools`, `skills`, `maxSubagentDepth`, `toolBudget`, and nested-agent controls. They are one-shot and async-only, receive the assembled prompt through their runner contract, and do not provide native Pi structured output or forked transcript context.
+Define a local command with `runner.type: external-cli`, a non-empty `command`, optional `args` (array of strings), and optional `promptDelivery: stdin`. The other supported runner types are `pi` and `external-job`; external runners reject Pi-only fields such as `tools`, `skills`, `maxSubagentDepth`, `toolBudget`, and nested-agent controls. They are one-shot and async-only, receive the assembled prompt through their runner contract, and do not provide native Pi structured output or forked transcript context.
 
 The code-owned adapters are `codex-exec`, `codex-exec-writer`, `claude-code`, `claude-code-writer`, `cursor-agent`, and `cursor-agent-writer`. Read-only profiles cannot be widened by user arguments; choose the writer profile for explicit workspace edits. `runner.available` is only passive executable discovery, not proof of authentication or launch compatibility; launch preflight is authoritative. Do not silently switch to an external runner after a native failure.
 
