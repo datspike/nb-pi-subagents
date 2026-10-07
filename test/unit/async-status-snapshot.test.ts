@@ -174,6 +174,34 @@ describe("async status snapshot", () => {
 		assert.ok(Buffer.byteLength(json(byteCapped), "utf8") <= 512);
 	});
 
+	it("keeps every active run listed under the byte limit by shedding nested detail first", () => {
+		const jobs = Array.from({ length: 3 }, (_, runIndex) => ({
+			asyncId: `run-${runIndex}`,
+			asyncDir: `/tmp/run-${runIndex}`,
+			sessionId: "session-a",
+			status: "running" as const,
+			agents: ["worker"],
+			startedAt: runIndex,
+			updatedAt: runIndex,
+			steps: Array.from({ length: 12 }, (_, stepIndex) => ({
+				agent: `child-${stepIndex}`,
+				status: "running" as const,
+				children: [{ id: `nested-${runIndex}-${stepIndex}`, parentRunId: `run-${runIndex}`, depth: 1, path: [], state: "running" as const, agent: "nested" }],
+			})),
+		}));
+
+		const full = buildAsyncStatusSnapshot(jobs, { generatedAt: 10 });
+		const limit = Math.floor(Buffer.byteLength(json(full), "utf8") * 0.8);
+		const snapshot = buildAsyncStatusSnapshot(jobs, { generatedAt: 10, maxSerializedBytes: limit });
+
+		assert.equal(snapshot.omitted.byteLimitExceeded, true);
+		assert.equal(snapshot.runs.length, 3);
+		assert.equal(snapshot.omitted.runs, 0);
+		assert.ok(snapshot.omitted.children > 0);
+		assert.ok(snapshot.runs.every((run) => run.children === undefined));
+		assert.ok(Buffer.byteLength(json(snapshot), "utf8") <= limit);
+	});
+
 	it("uses current-session state and retained fleet jobs without rebuilding history", () => {
 		const state = {
 			currentSessionId: "session-a",

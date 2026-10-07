@@ -464,9 +464,21 @@ function snapshotBytes(snapshot: AsyncStatusSnapshot): number {
 	return Buffer.byteLength(JSON.stringify(snapshot), "utf8");
 }
 
+function countDescendants(node: AsyncStatusSnapshotNode): number {
+	return (node.children ?? []).reduce((total, child) => total + 1 + countDescendants(child), 0);
+}
+
 function enforceByteLimit(snapshot: AsyncStatusSnapshot): void {
 	if (snapshotBytes(snapshot) <= snapshot.caps.maxSerializedBytes) return;
 	snapshot.omitted.byteLimitExceeded = true;
+	// Shed nested detail before dropping whole runs: consumers rely on every listed top-level
+	// run being visible, and runs are ordered active-first, so a large workflow must not push
+	// an active run out of the snapshot.
+	if (snapshot.runs.some((run) => run.children?.length)) {
+		snapshot.omitted.children += snapshot.runs.reduce((total, run) => total + countDescendants(run), 0);
+		snapshot.runs = snapshot.runs.map(({ children: _children, ...run }) => run);
+		if (snapshotBytes(snapshot) <= snapshot.caps.maxSerializedBytes) return;
+	}
 	const runs = snapshot.runs;
 	const initialOmittedRuns = snapshot.omitted.runs;
 	let lower = 0;

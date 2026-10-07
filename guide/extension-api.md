@@ -46,7 +46,7 @@ A successful `status` reply includes `fleet` and, when available, `asyncSnapshot
 
 `asyncSnapshot` is a separate bounded object: `{ kind, version, generatedAt, caps, omitted, runs }`. Its `kind` is `pi-subagents.async-status-snapshot` and its `version` is `1`. `caps` describes `maxRuns`, `maxChildrenPerNode`, `maxDepth`, `maxStringLength`, and `maxSerializedBytes`; `omitted` reports `runs`, `children`, and `byteLimitExceeded`. Each node has `id`, `kind` (`subagent`, `workflow`, `step`, or `host-step`), `label`, `state`, and optional times/activity/children.
 
-Snapshot `state` values are `queued`, `running`, `complete`, `failed`, `partial`, `paused`, `stopped`, and `rejected`. Source `pending`/`completed` values are normalized to `queued`/`complete`. Treat the projection as bounded and observational: inspect `omitted` and do not assume an absent node is complete.
+Snapshot `state` values are `queued`, `running`, `complete`, `failed`, `partial`, `paused`, `stopped`, and `rejected`. Source `pending`/`completed` values are normalized to `queued`/`complete`. Runs are ordered running, queued, then finished, so when `omitted.runs` is non-zero, active runs can be missing only if the last listed run is itself active. Over the byte limit, nested `children` are dropped before whole runs. Treat the projection as bounded and observational: inspect `omitted` and do not assume an absent node is complete.
 
 ## Correlate lifecycle events
 
