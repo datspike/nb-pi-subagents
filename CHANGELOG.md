@@ -6,6 +6,7 @@
 
 - Long child results are bounded at the parent boundary when a verified retention artifact contains the full output; the inline preview preserves status, errors and a readable output reference.
 - A session that declines Pi project trust now ignores project subagent settings, project agents and project-installed package agents, and public preflight receives the same trust decision; untrusted discovery does not read project settings.
+- Interrupting an unknown explicit run id now fails instead of affecting an unrelated newest run; nested control falls through to the child inbox when the owner has no foreground route.
 ## [0.76.1] - 2026-10-05
 
 ### Highlights
