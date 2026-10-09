@@ -49,13 +49,17 @@ export function ensureSessionIndexPolicy(
 		if (JSON.stringify(existing.data) !== JSON.stringify(desired)) {
 			throw new Error(`Session index policy conflict: existing marker ${JSON.stringify(existing.data)} does not match requested ${JSON.stringify(desired)}.`);
 		}
-		return;
+	} else {
+		sessionManager.appendCustomEntry(SESSION_INDEX_POLICY_CUSTOM_TYPE, desired);
 	}
-	sessionManager.appendCustomEntry(SESSION_INDEX_POLICY_CUSTOM_TYPE, desired);
 	if (sessionManager.isPersisted?.()) {
-		const rewriteFile = (sessionManager as unknown as { _rewriteFile?: () => void })._rewriteFile;
-		if (typeof rewriteFile !== "function") throw new Error("Session index policy cannot be persisted before child lifecycle: SDK SessionManager._rewriteFile is unavailable.");
-		rewriteFile.call(sessionManager);
+		const persistent = sessionManager as unknown as { _rewriteFile?: () => void; flushed?: boolean };
+		if (typeof persistent._rewriteFile !== "function" || typeof persistent.flushed !== "boolean") throw new Error("Session index policy cannot be persisted before child lifecycle: SDK SessionManager persistence state is unavailable.");
+		if (!persistent.flushed) {
+			persistent._rewriteFile();
+			// The SDK otherwise exclusively creates this file on the first assistant.
+			persistent.flushed = true;
+		}
 	}
 }
 

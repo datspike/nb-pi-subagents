@@ -43,6 +43,13 @@ test("flushes a persisted marker to JSONL before model lifecycle", () => {
 		assert.equal(records[0]?.type, "session");
 		assert.equal(records[1]?.customType, "session-index-policy");
 		assert.deepEqual(records[1]?.data, { version: 1, policy: "exclude", reason: "review", source: "pi-subagents", session_id: manager.getSessionId() });
+		manager.appendModelChange("fixture", "fixture");
+		manager.appendMessage({ role: "user", content: "fixture user", timestamp: Date.now() });
+		manager.appendMessage({ role: "assistant", content: [{ type: "text", text: "fixture assistant" }], api: "openai-responses", provider: "fixture", model: "fixture", usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } }, stopReason: "stop", timestamp: Date.now() });
+		const persisted = fs.readFileSync(file, "utf8").trim().split("\n").map((line) => JSON.parse(line) as Record<string, unknown>);
+		assert.equal(persisted.filter((entry) => entry.type === "session").length, 1);
+		assert.equal(persisted.filter((entry) => entry.customType === "session-index-policy").length, 1);
+		assert.equal(persisted.length, 5);
 	} finally {
 		fs.rmSync(root, { recursive: true, force: true });
 	}
