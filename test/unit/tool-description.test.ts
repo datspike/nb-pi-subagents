@@ -16,6 +16,7 @@ import {
 	SUBAGENT_TOOL_PROMPT_SNIPPET,
 } from "../../src/extension/tool-description.ts";
 import { SUBAGENT_CHILD_ENV } from "../../src/runs/shared/child-runtime-config.ts";
+import { resolveDisabledFeatureSurface } from "../../src/shared/disabled-features.ts";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 
@@ -31,6 +32,33 @@ function parentToolEnv(agentDir?: string): NodeJS.ProcessEnv {
 }
 
 describe("registered subagent tool description", () => {
+	it("renders registered custom placeholders with the disabled feature surface", () => {
+		for (const placeholder of ["fullDescription", "full", "compactDescription", "compact", "safetyGuidance", "safety"]) {
+			const agentDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagents-custom-disabled-"));
+			try {
+				writeExtensionConfig(agentDir, { toolDescriptionMode: "custom", disabledFeatures: ["workflow-scripts"] });
+				fs.writeFileSync(path.join(agentDir, "subagent-tool-description.md"), `{{${placeholder}}}`, "utf-8");
+				const description = readRegisteredTool(agentDir).description;
+				assert.match(description, /Call directly as a model tool, not through codemode/);
+				assert.match(description, /chain or tasks call/);
+				assert.doesNotMatch(description, /runs\.run|runs\.all|workflow:true|workflow: true/);
+				assert.equal(description.split("Call directly as a model tool").length - 1, 1);
+			} finally {
+				fs.rmSync(agentDir, { recursive: true, force: true });
+			}
+		}
+	});
+
+	it("keeps direct-call guidance without advertising disabled workflow scripts", () => {
+		const disabledFeatures = resolveDisabledFeatureSurface({ disabledFeatures: ["workflow-scripts"] });
+		for (const toolDescriptionMode of [undefined, "full", "compact"] as const) {
+			const description = buildSubagentToolDescription({ toolDescriptionMode }, { disabledFeatures });
+			assert.match(description, /Call directly as a model tool, not through codemode/);
+			assert.doesNotMatch(description, /runs\.run|runs\.all/);
+			assert.match(description, /chain or tasks call/);
+		}
+	});
+
 	it("keeps the operator authority gate visible in every description mode", () => {
 		const authorityGate = "Do the work yourself by default. Delegate only when the operator's current request or applicable instructions authorize it; size, complexity, risk or tool-call count alone never do.";
 		const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagents-tool-desc-authority-"));
@@ -45,6 +73,8 @@ describe("registered subagent tool description", () => {
 			buildSubagentToolDescription({ toolDescriptionMode: "custom" }, { cwd, agentDir }),
 		]) {
 			assert.ok(description.includes(authorityGate));
+			assert.match(description, /Call directly as a model tool, not through codemode or tools\.<name>\(\)/);
+			assert.match(description, /Workflow scripts use runs\.run\/runs\.all, not codemode/);
 		}
 
 		const fallbackCwd = fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagents-tool-desc-authority-fallback-"));

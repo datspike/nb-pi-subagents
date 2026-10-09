@@ -3,6 +3,7 @@ import * as path from "node:path";
 import type { ExtensionConfig, ToolDescriptionMode } from "../shared/types.ts";
 import { getAgentDir, getProjectConfigDir } from "../shared/utils.ts";
 import { resolveDisabledFeatureSurface, type DisabledFeatureSurface, type SubagentSurfaceFeature } from "../shared/disabled-features.ts";
+import { MODEL_ONLY_CALL_GUIDANCE } from "../shared/extension-context.ts";
 
 const CUSTOM_TOOL_DESCRIPTION_FILE = "subagent-tool-description.md";
 const CUSTOM_TOOL_DESCRIPTION_MAX_BYTES = 50 * 1024;
@@ -16,6 +17,7 @@ function featureText(disabled: DisabledFeatureSurface): FeatureText {
 }
 
 const safetyGuidance = (on: FeatureText) => `SAFETY-CRITICAL SUBAGENT GUIDANCE:
+• ${MODEL_ONLY_CALL_GUIDANCE}${on("workflow-scripts", " Workflow scripts use runs.run/runs.all, not codemode.")}
 • Do the work yourself by default. Delegate only when the operator's current request or applicable instructions authorize it; size, complexity, risk or tool-call count alone never do.
 • ${AGENT_SELECTION_GUIDANCE}
 • ${SUBAGENT_FAILURE_RECOVERY_GUIDANCE}
@@ -121,13 +123,14 @@ function renderCustomTemplate(template: string, options?: ToolDescriptionOptions
 	const cwd = options?.cwd ?? process.cwd();
 	const agentDir = options?.agentDir ?? getAgentDir();
 	const projectConfigDir = getProjectConfigDir(cwd);
+	const on = options?.disabledFeatures ? featureText(options.disabledFeatures) : allEnabled;
 	const variables: Record<string, () => string> = {
-		fullDescription: () => FULL_SUBAGENT_TOOL_DESCRIPTION,
-		full: () => FULL_SUBAGENT_TOOL_DESCRIPTION,
-		compactDescription: () => COMPACT_SUBAGENT_TOOL_DESCRIPTION,
-		compact: () => COMPACT_SUBAGENT_TOOL_DESCRIPTION,
-		safetyGuidance: () => SUBAGENT_SAFETY_GUIDANCE,
-		safety: () => SUBAGENT_SAFETY_GUIDANCE,
+		fullDescription: () => fullDescription(on),
+		full: () => fullDescription(on),
+		compactDescription: () => defaultDescription(on),
+		compact: () => defaultDescription(on),
+		safetyGuidance: () => safetyGuidance(on),
+		safety: () => safetyGuidance(on),
 		agentDir: () => agentDir,
 		projectConfigDir: () => projectConfigDir,
 	};

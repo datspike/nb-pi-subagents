@@ -19,7 +19,7 @@ import { removedModelWorkflowFieldError } from "./public-execution.ts";
 import { loadConfig, resolveAsyncByDefault } from "./config.ts";
 import { SUBAGENT_ASYNC_STARTED_EVENT, type AsyncStartedEvent, type Details, type SubagentState } from "../shared/types.ts";
 import { createChildExternalJobBridgeSweeper } from "../runs/shared/external-job-bridge.ts";
-import { MODEL_ONLY_TOOL } from "../shared/extension-context.ts";
+import { MODEL_ONLY_CALL_GUIDANCE, MODEL_ONLY_TOOL } from "../shared/extension-context.ts";
 
 function getSubagentSessionRoot(parentSessionFile: string | null): string {
 	if (parentSessionFile) {
@@ -223,6 +223,7 @@ export default function registerFanoutChildSubagentExtension(pi: ExtensionAPI, c
 		label: "Subagent",
 		description: [
 			"Delegate to subagents from child-safe fanout mode.",
+			MODEL_ONLY_CALL_GUIDANCE,
 			`Allowed management/control actions: ${listEnabled(["list", "get", "status", "lane.status", "interrupt", "resume", "steer", "doctor"])}.`,
 			...(blockedActions ? [`Mutating management actions (${blockedActions}) are blocked in this mode.`] : []),
 		].join("\n"),

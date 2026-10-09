@@ -9,7 +9,7 @@ import { PI_CODING_AGENT_PACKAGE_ROOT_ENV } from "../../src/shared/utils.ts";
 import { resolvePiPackageRoot } from "../../src/runs/shared/pi-spawn.ts";
 
 type Handler = (event: any, context: any) => any;
-type Tool = { name: string; description?: string; promptSnippet?: string; parameters?: unknown; execute?: (...args: any[]) => any };
+type Tool = { name: string; exposure?: string; description?: string; promptSnippet?: string; parameters?: unknown; execute?: (...args: any[]) => any };
 
 const runtimes: Array<{ handlers: Map<string, Handler[]>; context: any }> = [];
 
@@ -119,6 +119,19 @@ describe("subagent tool activation", () => {
 		const enabled = runtime.active();
 		await loader.execute?.("enable-again", {}, new AbortController().signal, undefined, runtime.context);
 		assert.deepEqual(runtime.active(), enabled);
+	});
+
+	it("advertises direct model calls for model-only delegation tools", async () => {
+		const runtime = createRuntime([], [], [], DYNAMIC);
+		await runtime.emit("session_start", { type: "session_start", reason: "startup" });
+		for (const name of ["subagents_enable", "subagent"]) {
+			const tool = runtime.tools.get(name)!;
+			assert.equal(tool.exposure, "model-only");
+			assert.match(tool.description ?? "", /Call directly as a model tool, not through codemode/);
+		}
+		const result = await runtime.tools.get("subagents_enable")!.execute?.("enable", {}, new AbortController().signal, undefined, runtime.context);
+		assert.notEqual(result?.isError, true);
+		assert.ok(runtime.active().includes("subagent"));
 	});
 
 	it("restores native cold and warm transcript selections across start, reload, and tree navigation", async () => {

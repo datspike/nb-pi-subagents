@@ -117,6 +117,8 @@ describe("subagent extension child mode", () => {
 				modelRegistry: { getAvailable() { return []; } },
 			};
 			for (const tool of [tools.parent, tools.fanout]) {
+				assert.equal(tool.exposure, "model-only");
+				assert.match(tool.description, /Call directly as a model tool, not through codemode or tools\.<name>\(\)/);
 				await assert.rejects(tool.execute("model-script", { workflowScript: "return 1" }, new AbortController().signal, undefined, ctx), /workflowScript was removed.*subagent\(\{ workflow: true \}\)/);
 				await assert.rejects(tool.execute("model-path", { workflowScriptPath: "ci/sweep.js" }, new AbortController().signal, undefined, ctx), /workflowScriptPath was removed.*workflow: "\.\/path\/to\/script\.js"/);
 			}

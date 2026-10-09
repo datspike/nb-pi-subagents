@@ -215,7 +215,7 @@ describe("native supervisor channel", () => {
 			message: { content?: string; details?: { id?: string } };
 			options?: { triggerTurn?: boolean };
 		}> = [];
-		const registeredTools: Array<{ name: string; parameters: { properties: { action: unknown } } }> = [];
+		const registeredTools: Array<{ name: string; exposure: string; description: string; parameters: { properties: { action: unknown } } }> = [];
 		const ctx = {
 			cwd: process.cwd(),
 			hasUI: false,
@@ -243,6 +243,8 @@ describe("native supervisor channel", () => {
 
 		assert.deepEqual(registeredTools.map((tool) => tool.name), [NATIVE_SUPERVISOR_TOOL_NAME]);
 		assert.deepEqual(registeredTools[0]?.parameters.properties.action, { type: "string", enum: ["list", "pending", "status", "reply"] });
+		assert.equal(registeredTools[0]?.exposure, "model-only");
+		assert.match(registeredTools[0]!.description, /Call directly as a model tool, not through codemode/);
 		assert.deepEqual(sent.map(({ message }) => message.details?.id), [matchingId]);
 		assert.deepEqual(sent[0]?.options, { triggerTurn: true });
 		assert.equal(channel.pending.has(matchingId), false, "disposed channel clears pending requests");
@@ -1151,10 +1153,10 @@ describe("native supervisor channel", () => {
 		const runId = `run-${randomUUID()}`;
 		const channelDir = resolveSupervisorChannelDir(runId, "worker", 3);
 		createdChannels.push(channelDir);
-		const registeredTools = new Map<string, { execute: (_id: string, params: { reason: string; message?: string }) => Promise<unknown> | unknown }>();
+		const registeredTools = new Map<string, { exposure: string; description: string; execute: (_id: string, params: { reason: string; message?: string }) => Promise<unknown> | unknown }>();
 		const pi = {
 			getAllTools: () => [...registeredTools.keys()].map((name) => ({ name })),
-			registerTool: (tool: { name: string; execute: (_id: string, params: { reason: string; message?: string }) => Promise<unknown> | unknown }) => {
+			registerTool: (tool: { name: string; exposure: string; description: string; execute: (_id: string, params: { reason: string; message?: string }) => Promise<unknown> | unknown }) => {
 				registeredTools.set(tool.name, tool);
 			},
 		};
@@ -1166,6 +1168,8 @@ describe("native supervisor channel", () => {
 			orchestratorTarget: "shared-name",
 			orchestratorSessionId: "session-parent",
 		});
+		assert.equal(registeredTools.get("contact_supervisor")!.exposure, "model-only");
+		assert.match(registeredTools.get("contact_supervisor")!.description, /Call directly as a model tool, not through codemode/);
 
 		await assert.rejects(
 			() => registeredTools.get("contact_supervisor")!.execute("blank-progress", { reason: "progress_update" }),

@@ -4,6 +4,8 @@ Parameters and actions for the `subagent` tool. These are what the LLM passes wh
 
 In a fresh parent session, `subagents_enable({})` makes the full `subagent` tool available on the immediately following model request without launching work. Pi may call it when delegation is authorized by the current request or applicable instructions, or to manage existing runs. Direct execution remains the default; task complexity does not grant delegation authority. The public `subagent` name and parameters are unchanged after activation.
 
+`subagents_enable`, `subagent`, `subagent_supervisor`, and `contact_supervisor` are model-only tools: call them directly as model tool calls, not through `codemode` or `tools.<name>()`. This keeps delegation progress, supervisor replies, and termination visible to the parent. Subagent workflow scripts are a separate interface using `runs.run` and `runs.all`; they are not Code Mode scripts.
+
 Call `{ action: "guide", topic: "tool-reference" }` for this reference or `topic: "workflows"` for [workflow recipes](workflows.md). Use `topic: "agents"` for authoring, `topic: "missions"` for missions/schedules, and `topic: "watchdog"` for watchdog controls. Guide reads do not change the schema or grant authority.
 
 ## Execution examples

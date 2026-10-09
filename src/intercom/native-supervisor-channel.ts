@@ -8,7 +8,7 @@ import type { ChildSupervisorMetadata } from "../runs/shared/child-runtime-confi
 import { INTERCOM_DETACH_REQUEST_EVENT, POLL_INTERVAL_MS, TEMP_ROOT_DIR, type ControlEvent, type IntercomEventBus, type SubagentState } from "../shared/types.ts";
 import { writeAtomicJson } from "../shared/atomic-json.ts";
 import { shouldUseNativeFsWatch } from "../shared/watch-strategy.ts";
-import { MODEL_ONLY_TOOL } from "../shared/extension-context.ts";
+import { MODEL_ONLY_CALL_GUIDANCE, MODEL_ONLY_TOOL } from "../shared/extension-context.ts";
 import {
 	SUPERVISOR_REQUEST_MESSAGE_TYPE,
 	SUPERVISOR_REPLY_ENTRY_TYPE,
@@ -263,7 +263,7 @@ export function registerNativeSupervisorClient(pi: ExtensionAPI, metadata: Child
 		name: "contact_supervisor",
 		...MODEL_ONLY_TOOL,
 		label: "Contact Supervisor",
-		description: "Contact the parent/supervisor session for a blocking decision, structured interview, or progress update.",
+		description: `Contact the parent/supervisor session for a blocking decision, structured interview, or progress update. ${MODEL_ONLY_CALL_GUIDANCE}`,
 		parameters: ContactSupervisorParamsSchema,
 		execute(id, params, signal) {
 			return sendSupervisorRequest(params as ContactSupervisorParams, metadata, signal, id);
@@ -590,7 +590,7 @@ function buildParentSupervisorTool(pi: ExtensionAPI, pending: Map<string, Pendin
 		name: NATIVE_SUPERVISOR_TOOL_NAME,
 		...MODEL_ONLY_TOOL,
 		label: "Subagent Supervisor",
-		description: "Native pi-subagents supervisor channel. Use reply/pending/status to answer child subagent requests without overriding pi-intercom.",
+		description: `Native pi-subagents supervisor channel. Use reply/pending/status to answer child subagent requests without overriding pi-intercom. ${MODEL_ONLY_CALL_GUIDANCE}`,
 		parameters: IntercomParamsSchema,
 		async execute(_id, params) {
 			// Discover new request files even when demand-gated polling is idle.

@@ -1,6 +1,6 @@
 import type { ExtensionAPI, ExtensionContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { MODEL_ONLY_TOOL } from "../shared/extension-context.ts";
+import { MODEL_ONLY_CALL_GUIDANCE, MODEL_ONLY_TOOL } from "../shared/extension-context.ts";
 import type { ToolActivationMode } from "../shared/types.ts";
 
 interface ActivationDetails {
@@ -99,7 +99,7 @@ export function registerSubagentToolActivation(
 		name: LOADER_NAME,
 		...MODEL_ONLY_TOOL,
 		label: "Enable Subagents",
-		description: "Enable the subagent tools without launching work. Call only when delegation is authorized or to manage existing runs. Tools are available on the next model request.",
+		description: `Enable the subagent tools without launching work. Call only when delegation is authorized or to manage existing runs. Tools are available on the next model request. ${MODEL_ONLY_CALL_GUIDANCE}`,
 		promptSnippet: "pi-subagents is installed. For authorized specialist, independent-review, or parallel work, call subagents_enable, then subagent. Authorization must come from the current request or applicable instructions; complexity alone is not authorization.",
 		parameters,
 		async execute() {

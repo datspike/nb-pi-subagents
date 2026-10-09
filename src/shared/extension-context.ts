@@ -8,6 +8,9 @@ import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
  */
 export const MODEL_ONLY_TOOL = { exposure: "model-only" } as const;
 
+/** Explains the model-only boundary at the tool's point of use. */
+export const MODEL_ONLY_CALL_GUIDANCE = "Call directly as a model tool, not through codemode or tools.<name>().";
+
 /** Pi exposes replaced extension contexts as ordinary Errors without a stable code. */
 export function isStaleExtensionContextError(error: unknown): boolean {
 	return error instanceof Error
