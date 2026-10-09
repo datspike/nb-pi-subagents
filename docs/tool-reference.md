@@ -442,7 +442,7 @@ Edge cases:
 - The bare string `"none"` is rejected; use `{ level: "none", reason: "..." }` instead.
 - `acceptance: false` is accepted only as a deprecated shorthand for disabling gates.
 - For reviewer/read-only calls, omit `acceptance`.
-- The explicit value `"reviewed"` is not a policy level: it remains schema-recognized only so semantic preflight can explain the mistake without spawning a child. To require review of a writer result, use `acceptance: { level: "checked", review: { required: true, agent: "reviewer" } }` and orchestrate the reviewer separately.
+- The explicit value `"reviewed"` is an achieved status, not a policy level, and is excluded from the tool schema. Calls that bypass schema validation still receive an actionable semantic preflight error without spawning a child. To require review of a writer result, use `acceptance: { level: "checked", review: { required: true, agent: "reviewer" } }` and orchestrate the reviewer separately.
 - With `agentContract: { version: 1 }`, omitted, `"auto"`, and `false` mean no acceptance request for that run; explicit acceptance is reported separately from execution.
 
 ### Evidence status
