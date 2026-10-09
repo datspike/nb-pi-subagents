@@ -3,6 +3,7 @@ import {
 } from "../api/delegation.ts";
 import { validateIntercomBridgeConfig } from "../intercom/intercom-bridge.ts";
 import { validateToolBudgetConfig } from "../runs/shared/tool-budget.ts";
+import type { SessionIndexPolicyRequest } from "../runs/shared/session-index-policy.ts";
 import type { IntercomBridgeConfig } from "../shared/types.ts";
 import { cloneJsonWithinByteLimit } from "./delegation-json.ts";
 
@@ -23,6 +24,8 @@ const supportedFields = new Set([
 	"timeoutMs",
 	"toolBudget",
 	"skill",
+	"subagentOnlyExtensions",
+	"sessionIndexPolicy",
 	"artifacts",
 	"intercomBridge",
 	"result",
@@ -35,6 +38,9 @@ const MAX_CWD_BYTES = 32 * 1024;
 const MAX_SHORT_TEXT_BYTES = 1024;
 const MAX_SKILL_ENTRIES = 256;
 const MAX_SKILL_AGGREGATE_BYTES = 64 * 1024;
+const MAX_EXTENSION_ENTRIES = 256;
+
+const MAX_EXTENSION_AGGREGATE_BYTES = 64 * 1024;
 
 function nonEmptyString(value: unknown): value is string {
 	return typeof value === "string" && value.trim().length > 0;
@@ -97,6 +103,14 @@ export function parseSubagentDelegationRequest(data: unknown): SubagentDelegatio
 			return { ok: false, ...identity, error: "skill must be a boolean, non-empty string, or non-empty string array." };
 		}
 	}
+	if (value.subagentOnlyExtensions !== undefined) {
+		if (!Array.isArray(value.subagentOnlyExtensions) || value.subagentOnlyExtensions.length === 0 || !value.subagentOnlyExtensions.every(nonEmptyString)) {
+			return { ok: false, ...identity, error: "subagentOnlyExtensions must be a non-empty string array." };
+		}
+		if (value.subagentOnlyExtensions.length > MAX_EXTENSION_ENTRIES) return { ok: false, ...identity, error: "subagentOnlyExtensions supports at most 256 entries." };
+		if ((value.subagentOnlyExtensions as string[]).some((entry) => Buffer.byteLength(entry, "utf8") > MAX_SHORT_TEXT_BYTES)) return { ok: false, ...identity, error: "subagentOnlyExtensions entry exceeds 1 KiB when UTF-8 encoded." };
+		if ((value.subagentOnlyExtensions as string[]).reduce((total, entry) => total + Buffer.byteLength(entry, "utf8"), 0) > MAX_EXTENSION_AGGREGATE_BYTES) return { ok: false, ...identity, error: "subagentOnlyExtensions entries exceed 64 KiB in aggregate." };
+	}
 	if (value.artifacts !== undefined && typeof value.artifacts !== "boolean") {
 		return { ok: false, ...identity, error: "artifacts must be a boolean." };
 	}
@@ -130,6 +144,15 @@ export function parseSubagentDelegationRequest(data: unknown): SubagentDelegatio
 	}
 	if (skillEntries.reduce((total, entry) => total + Buffer.byteLength(entry, "utf8"), 0) > MAX_SKILL_AGGREGATE_BYTES) {
 		return { ok: false, ...identity, error: "Delegation skill entries exceed 64 KiB in aggregate when UTF-8 encoded." };
+	}
+	let sessionIndexPolicy: SessionIndexPolicyRequest | undefined;
+	if (value.sessionIndexPolicy !== undefined) {
+		if (!value.sessionIndexPolicy || typeof value.sessionIndexPolicy !== "object" || Array.isArray(value.sessionIndexPolicy)) return { ok: false, ...identity, error: "sessionIndexPolicy must be an object." };
+		const policy = value.sessionIndexPolicy as Record<string, unknown>;
+		if (Object.keys(policy).some((key) => key !== "reason" && key !== "source")) return { ok: false, ...identity, error: "sessionIndexPolicy contains unsupported fields." };
+		if (policy.reason !== "review" && policy.reason !== "eval" && policy.reason !== "memory-maintenance") return { ok: false, ...identity, error: "sessionIndexPolicy.reason is invalid." };
+		if (policy.source !== undefined && policy.source !== "pi-subagents" && policy.source !== "eval-session-marker") return { ok: false, ...identity, error: "sessionIndexPolicy.source is invalid." };
+		sessionIndexPolicy = { reason: policy.reason, ...(policy.source ? { source: policy.source } : {}) } as SessionIndexPolicyRequest;
 	}
 	if (value.thinking !== undefined && (typeof value.thinking !== "string" || !thinkingLevels.has(value.thinking))) {
 		return { ok: false, ...identity, error: "thinking must be one of off, minimal, low, medium, high, xhigh, or max." };
@@ -171,6 +194,8 @@ export function parseSubagentDelegationRequest(data: unknown): SubagentDelegatio
 			result: structuredSchema
 				? { kind: "structured", schema: structuredSchema }
 				: { kind: "text" },
+			...(Array.isArray(value.subagentOnlyExtensions) ? { subagentOnlyExtensions: [...value.subagentOnlyExtensions] } : {}),
+			...(sessionIndexPolicy ? { sessionIndexPolicy } : {}),
 		} as unknown as SubagentDelegationRequest,
 	};
 }

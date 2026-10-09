@@ -384,6 +384,7 @@ async function runSingleAttempt(
 		remoteSkillNames: options.skills ?? agent.skills,
 		remoteReads: options.remoteReads,
 		extensionBindings: options.extensionBindings,
+		subagentOnlyExtensions: options.subagentOnlyExtensions ?? agent.subagentOnlyExtensions,
 		requiredExtensions: options.requiredExtensions,
 		sessionEnabled: shared.sessionEnabled,
 		sessionDir: options.sessionDir,
@@ -399,7 +400,6 @@ async function runSingleAttempt(
 		allowNestedSubagents: agent.allowNestedSubagents,
 		descendantAllowedAgents: agent.allowedAgents,
 		extensions: agent.extensions,
-		subagentOnlyExtensions: agent.subagentOnlyExtensions,
 		// Exact terminal protocol belongs to session resources, not compactable history.
 		systemPrompt: shared.acceptancePrompt ? `${shared.systemPrompt}\n${shared.acceptancePrompt}` : shared.systemPrompt,
 		mcpDirectTools: agent.mcpDirectTools,
@@ -410,6 +410,7 @@ async function runSingleAttempt(
 		orchestratorIntercomTarget: options.orchestratorIntercomTarget,
 		runId: options.runId,
 		childAgentName: agent.name,
+		sessionIndexPolicy: options.sessionIndexPolicy,
 		childIndex: options.index ?? 0,
 		nestedRoute: options.nestedRoute,
 		runFanoutBudget: options.runFanoutBudget,

@@ -8,6 +8,7 @@ import {
 	type SubagentDelegationValue,
 } from "../api/delegation.ts";
 import type { AcceptanceInput, AgentContract, AgentProgress, EffectsProjection, ExecutionProjection, IntercomBridgeConfig, JsonSchemaObject, ReviewProjection, ToolBudgetConfig, Usage } from "../shared/types.ts";
+import type { SessionIndexPolicyRequest } from "../runs/shared/session-index-policy.ts";
 import { cloneJsonWithinByteLimit } from "./delegation-json.ts";
 
 export interface PromptTemplateDelegationRequest {
@@ -127,6 +128,8 @@ export interface DelegatedSubagentExecutionParams {
 	cwd: string;
 	timeoutMs?: number;
 	toolBudget?: ToolBudgetConfig;
+	subagentOnlyExtensions?: string[];
+	sessionIndexPolicy?: SessionIndexPolicyRequest;
 	skill?: string | string[] | boolean;
 	output?: string | boolean;
 	outputMode?: "inline" | "file-only";
@@ -315,6 +318,8 @@ export function toSubagentDelegationExecutionParams(request: SubagentDelegationR
 		model: request.model,
 		timeoutMs: request.timeoutMs,
 		toolBudget: request.toolBudget,
+		...(request.subagentOnlyExtensions !== undefined ? { subagentOnlyExtensions: [...request.subagentOnlyExtensions] } : {}),
+		...(request.sessionIndexPolicy !== undefined ? { sessionIndexPolicy: request.sessionIndexPolicy } : {}),
 		skill: request.skill,
 		...(request.result.kind === "structured" ? { outputSchema: request.result.schema } : {}),
 		acceptance: false,

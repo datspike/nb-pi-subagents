@@ -20,6 +20,8 @@ test("launch boundary gives explicit eval precedence over generic reviewer", () 
 	const base = { host: "parent" as const, cwd: process.cwd(), childIndex: 0, sessionEnabled: false, inheritProjectContext: false, inheritGlobalContext: false, inheritSkills: false };
 	assert.deepEqual(buildInProcessChildLaunch({ ...base, childAgentName: "reviewer" }).session.sessionIndexPolicy, { reason: "review", source: "pi-subagents" });
 	assert.deepEqual(buildInProcessChildLaunch({ ...base, childAgentName: "reviewer", sessionIndexPolicy: { reason: "eval", source: "eval-session-marker" } }).session.sessionIndexPolicy, { reason: "eval", source: "eval-session-marker" });
+	const evalLaunch = buildInProcessChildLaunch({ ...base, childAgentName: "reviewer", subagentOnlyExtensions: ["/eval-session-marker/extension/marker.ts"], sessionIndexPolicy: { reason: "eval", source: "eval-session-marker" } });
+	assert.deepEqual(evalLaunch.session.extensionPaths, ["/eval-session-marker/extension/marker.ts"]);
 	assert.equal(buildInProcessChildLaunch({ ...base, childAgentName: "worker" }).session.sessionIndexPolicy, undefined);
 });
 

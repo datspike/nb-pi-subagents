@@ -2543,6 +2543,10 @@ export interface RunSyncOptions {
 	thinkingCeiling?: ThinkingLevel;
 	requiredExtensions?: RequiredChildExtensionSnapshot;
 	extensionBindings?: ExtensionBindings;
+	/** Internal extension-to-extension child-only extension binding. */
+	subagentOnlyExtensions?: string[];
+	/** Internal host-owned policy propagated to the child session before lifecycle. */
+	sessionIndexPolicy?: import("../runs/shared/session-index-policy.ts").SessionIndexPolicyRequest;
 	/** Package-internal one-use authorization for one foreground workflow child. */
 	workflowChildPermitLaunch?: WorkflowChildPermitContext;
 	/** Registry models available for heuristic bare-model resolution */

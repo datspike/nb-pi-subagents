@@ -1,4 +1,5 @@
 import type { IntercomBridgeConfig } from "../shared/types.ts";
+import type { SessionIndexPolicyRequest } from "../runs/shared/session-index-policy.ts";
 
 // This is the established extension-to-extension transport. The structured
 // delegation API intentionally reuses it instead of adding a second event
@@ -36,6 +37,10 @@ export interface SubagentDelegationRequest {
 	timeoutMs?: number;
 	toolBudget?: SubagentDelegationToolBudget;
 	skill?: string | string[] | boolean;
+	/** Internal extension-to-extension child-only extension binding. */
+	subagentOnlyExtensions?: string[];
+	/** Internal host-owned launch policy; not part of the model-facing tool schema. */
+	sessionIndexPolicy?: SessionIndexPolicyRequest;
 	artifacts?: boolean;
 	/** Per-launch bridge config; replaces the global `intercomBridge` config. Pass the same value to preflight to compare digests. */
 	intercomBridge?: IntercomBridgeConfig;

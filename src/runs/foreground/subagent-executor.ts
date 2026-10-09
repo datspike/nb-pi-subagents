@@ -343,6 +343,10 @@ export interface SubagentParamsLike {
 	task?: string;
 	capabilities?: boolean;
 	extensionBindings?: ExtensionBindings;
+	/** Internal extension-to-extension child-only extension binding. */
+	subagentOnlyExtensions?: string[];
+	/** Internal host-owned policy propagated before child lifecycle. */
+	sessionIndexPolicy?: import("../shared/session-index-policy.ts").SessionIndexPolicyRequest;
 	/** Retained async child run id. Valid only on workflow runs.run items. */
 	resume?: string;
 	message?: string;
@@ -4278,6 +4282,8 @@ async function runSinglePath(data: ExecutionContextData, deps: ExecutorDeps): Pr
 			runtimeSnapshotHost: deps.pi,
 			parentSessionId: ctx.sessionManager.getSessionId() ?? undefined,
 			requiredExtensions,
+			subagentOnlyExtensions: params.subagentOnlyExtensions,
+			sessionIndexPolicy: params.sessionIndexPolicy,
 			childRuntime: deps.childRuntime,
 			onChildSession: (controls) => { childSessionControls = controls; },
 			context: data.contextPolicy.contextForAgent(params.agent!),

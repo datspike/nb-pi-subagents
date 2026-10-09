@@ -102,6 +102,25 @@ describe("public subagent delegation contract", () => {
 		}
 	});
 
+	it("forwards internal child extension binding and explicit eval policy without changing ordinary callers", () => {
+		const input = {
+			...request,
+			subagentOnlyExtensions: ["/eval-session-marker/extension/marker.ts"],
+			sessionIndexPolicy: { reason: "eval" as const, source: "eval-session-marker" as const },
+		};
+		const parsed = parseSubagentDelegationRequest(input);
+		assert.equal(parsed.ok, true);
+		if (parsed.ok) {
+			assert.deepEqual(parsed.request.subagentOnlyExtensions, input.subagentOnlyExtensions);
+			assert.deepEqual(parsed.request.sessionIndexPolicy, input.sessionIndexPolicy);
+			const params = toSubagentDelegationExecutionParams(parsed.request);
+			assert.deepEqual(params.subagentOnlyExtensions, input.subagentOnlyExtensions);
+			assert.deepEqual(params.sessionIndexPolicy, input.sessionIndexPolicy);
+		}
+		assert.equal("subagentOnlyExtensions" in toSubagentDelegationExecutionParams(request), false);
+		assert.equal("sessionIndexPolicy" in toSubagentDelegationExecutionParams(request), false);
+	});
+
 	it("accepts exact zero tool budgets for structured delegated leaves", () => {
 		const zeroBudget = { hard: 0, block: "*" as const };
 		const parsed = parseSubagentDelegationRequest({ ...request, toolBudget: zeroBudget });
