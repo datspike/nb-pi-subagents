@@ -5,6 +5,7 @@
 ### Changed
 
 - Long child results are bounded at the parent boundary when a verified retention artifact contains the full output; the inline preview preserves status, errors and a readable output reference.
+- A session that declines Pi project trust now ignores project subagent settings, project agents and project-installed package agents, and public preflight receives the same trust decision.
 ## [0.76.1] - 2026-10-05
 
 ### Highlights
