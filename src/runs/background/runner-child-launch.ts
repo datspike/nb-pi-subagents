@@ -69,6 +69,7 @@ export function buildRunnerChildLaunch(step: RunnerSubagentStep, ctx: RunnerChil
 		orchestratorIntercomTarget: ctx.orchestratorIntercomTarget,
 		runId: ctx.id,
 		childAgentName: step.agent,
+		sessionIndexPolicy: step.sessionIndexPolicy,
 		childIndex: ctx.flatIndex,
 		nestedRoute: ctx.nestedRoute,
 		runFanoutBudget: ctx.runFanoutBudget ? {

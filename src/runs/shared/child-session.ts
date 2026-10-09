@@ -21,6 +21,7 @@ import { PI_CODING_AGENT_PACKAGE, resolveInstalledPiPackageRoot, resolvePiPackag
 import type { ChildRuntimeConfig } from "./child-runtime-config.ts";
 import type { RequiredChildExtensionSnapshot } from "../../shared/required-child-extensions.ts";
 import type { HerdrMachineReference, HerdrRemoteGitStatus } from "../../shared/types.ts";
+import { ensureSessionIndexPolicy, type SessionIndexPolicyRequest } from "./session-index-policy.ts";
 
 export interface ChildSessionEvent {
 	type: string;
@@ -92,6 +93,8 @@ export interface ChildSessionLaunch {
 	 * window one at a time. An undefined value removes the variable.
 	 */
 	processEnv?: Record<string, string | undefined>;
+	/** Host-resolved marker written to this child session before SDK lifecycle. */
+	sessionIndexPolicy?: SessionIndexPolicyRequest;
 	/** The typed runtime config the hooks were built from; informational for factories. */
 	runtime: ChildRuntimeConfig;
 	onExtensionError?: (error: ChildSessionExtensionError) => void;
@@ -512,6 +515,7 @@ export function createDefaultChildSessionFactory(options: DefaultChildSessionFac
 						: launch.storage.kind === "memory"
 							? pi.SessionManager.inMemory(launch.cwd)
 							: pi.SessionManager.create(launch.cwd);
+				ensureSessionIndexPolicy(sessionManager, launch.sessionIndexPolicy);
 				const resolvedModel = launch.model
 					? pi.resolveCliModel({ cliModel: launch.model, modelRuntime })
 					: undefined;

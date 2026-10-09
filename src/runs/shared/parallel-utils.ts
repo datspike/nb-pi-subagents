@@ -6,6 +6,8 @@ export interface RunnerSubagentStep {
 	/** Resolved opt-in rules for native Pi child tool calls. */
 	permissionRules?: import("./permissions.ts").PermissionRules;
 	agent: string;
+	/** Explicit service classification; ordinary worker/scout launches remain indexable. */
+	sessionIndexPolicy?: import("./session-index-policy.ts").SessionIndexPolicyRequest;
 	/** Human-readable display name for the child session, derived internally at launch. */
 	sessionName?: string;
 	task: string;

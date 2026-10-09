@@ -91,6 +91,18 @@ import { normalizeExtensionBindings, omitExtensionBindingsEnv, type ExtensionBin
 import { omitGitRoutingEnv } from "../shared/git-environment.ts";
 import { assertWorkflowLaneKey, normalizeWorkflowLaneMetadata } from "../shared/lane-metadata.ts";
 import { assertRequiredChildExtensionsAdmitted, resolveRequiredChildExtensions, writeRetainedRequiredChildExtensions, type RequiredChildExtensionSnapshot } from "../../shared/required-child-extensions.ts";
+import { resolveSessionIndexPolicy, sessionIndexPolicyEnv } from "../shared/session-index-policy.ts";
+
+function uniformSessionIndexPolicy(steps: RunnerStep[]): ReturnType<typeof resolveSessionIndexPolicy> {
+	const policies = steps.flatMap((step): ReturnType<typeof resolveSessionIndexPolicy>[] => {
+		if (isParallelGroup(step)) return uniformSessionIndexPolicy(step.parallel) ? [uniformSessionIndexPolicy(step.parallel)] : [];
+		if (isDynamicRunnerGroup(step)) return uniformSessionIndexPolicy([step.parallel]) ? [uniformSessionIndexPolicy([step.parallel])] : [];
+		return [resolveSessionIndexPolicy(step.agent, step.sessionIndexPolicy)];
+	}).filter((policy): policy is NonNullable<ReturnType<typeof resolveSessionIndexPolicy>> => policy !== undefined);
+	if (policies.length === 0 || policies.length !== steps.flatMap((step) => isParallelGroup(step) ? step.parallel : isDynamicRunnerGroup(step) ? [step.parallel] : [step]).length) return undefined;
+	const first = JSON.stringify(policies[0]);
+	return policies.every((policy) => JSON.stringify(policy) === first) ? policies[0] : undefined;
+}
 
 const require = nodeModule.createRequire(import.meta.url);
 const piPackageRoot = resolveAsyncPiPackageRoot();
@@ -738,6 +750,7 @@ function spawnRunner(cfg: object, suffix: string, cwd: string, initialStatus: Om
 			PI_PACKAGE_DIR: binaryHost ? process.env.PI_PACKAGE_DIR : piPackageRoot,
 			[JITI_ALIAS_ENV]: binaryHost ? undefined : JSON.stringify(hostPeerAliases.aliases),
 			PI_ASYNC_NATIVE_RUNNER: !binaryHost && (runnerIsJavaScript || nativeRunnerSupported) ? "1" : "0",
+			...sessionIndexPolicyEnv(uniformSessionIndexPolicy(steps as RunnerStep[])),
 			PI_SUBAGENT_RUNNER_CONFIG: binaryHost ? cfgPath : undefined,
 		};
 		if (launchParentSessionId === undefined) delete runnerEnv[SUBAGENT_PARENT_SESSION_ENV];

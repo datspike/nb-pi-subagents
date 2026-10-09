@@ -36,6 +36,7 @@ import { createCapturedChildHooks, withChildSessionErrorReporting } from "./chil
 import type { ChildTranscriptWriter } from "../../shared/child-transcript.ts";
 import type { ChildSessionLaunch, ChildSessionStorage } from "./child-session.ts";
 import { resolveRequiredChildExtensions, type RequiredChildExtensionSnapshot } from "../../shared/required-child-extensions.ts";
+import { resolveSessionIndexPolicy, type SessionIndexPolicyRequest } from "./session-index-policy.ts";
 
 /** Environment variable pi-mcp-adapter reads for the tools a child may expose. */
 export const MCP_DIRECT_TOOLS_ENV = "MCP_DIRECT_TOOLS";
@@ -96,6 +97,7 @@ export interface BuildInProcessChildLaunchInput {
 	orchestratorIntercomTarget?: string;
 	runId?: string;
 	childAgentName: string;
+	sessionIndexPolicy?: SessionIndexPolicyRequest;
 	childIndex: number;
 	nestedRoute?: { rootRunId: string; eventSink: string; controlInbox: string; capabilityToken: string };
 	runFanoutBudget?: RunFanoutBudgetDescriptor;
@@ -336,6 +338,7 @@ export function buildInProcessChildLaunch(input: BuildInProcessChildLaunchInput)
 		requiredExtensions: toolPlan.requiredExtensions,
 		ambientExtensions,
 		hooks: capturedHooks.hooks,
+		...(resolveSessionIndexPolicy(input.childAgentName, input.sessionIndexPolicy) ? { sessionIndexPolicy: resolveSessionIndexPolicy(input.childAgentName, input.sessionIndexPolicy) } : {}),
 		...(input.host === "runner" ? { processEnv: childProcessEnv(input, toolPlan) } : {}),
 		runtime: config,
 		noSkills: !input.inheritSkills,
