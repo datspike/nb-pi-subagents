@@ -417,13 +417,11 @@ export type AsyncRunnerStepBuildResult =
 export function formatAsyncStartedMessage(headline: string, interactive: boolean): string {
 	const guidance = interactive
 		? [
-			"The async run is detached and running in the background.",
-			"End your turn now: Pi wakes this session when it completes or needs attention. Do not sleep, poll or call bg_wait for it; bg_wait is only for work with no completion notification.",
-			"Continue independent work if there is any. Use subagent({ action: \"status\", id: \"...\" }) only for a one-shot look at a blocked or stale run.",
+			"Detached. Return control now: native completion wakes you, so do not sleep, poll, or call bg_wait for it.",
+			"One-shot check: subagent({ action: \"status\", id: \"...\" }).",
 		]
 		: [
-			"The async run is detached. This is a non-interactive run: Pi auto-drains current-session subagent work at agent_end. Do not sleep or poll for it.",
-			"Use bg_wait only when this turn needs results from provider, detached, or other background work with no native completion notification. Use subagent({ action: \"status\", id: \"...\" }) only for a one-shot look at a blocked or stale run.",
+			"Detached non-interactive run: Pi auto-drains current-session subagent work at agent_end. Do not run sleep timers or polling loops. Use bg_wait only for results this turn needs from work without native notification, and subagent({ action: \"status\", id: \"...\" }) for a one-shot check.",
 		];
 	return [headline, "", ...guidance].join("\n");
 }

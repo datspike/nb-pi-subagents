@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Long child results are bounded at the parent boundary when a verified retention artifact contains the full output; the inline preview preserves status, errors and a readable output reference.
 ## [0.76.1] - 2026-10-05
 
 ### Highlights
