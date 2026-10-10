@@ -104,7 +104,7 @@ import { promotePausedWorkflowIfSettled, reconcileDetachedWorkflowChildCompletio
 import { reconcileAsyncRun } from "../background/stale-run-reconciler.ts";
 import { resolveAsyncRootResultPath, waitForImportedAsyncRoot } from "../background/chain-root-attachment.ts";
 import { awaitExistingAsyncRun, claimWorkflowAwaitedResult } from "../background/await-async-run.ts";
-import { fallbackResultPayloadPathForSessionRun, removeResultIndex, resultFilePath, retireResultSnapshot, writeAsyncResultFile } from "../background/result-files.ts";
+import { fallbackResultPayloadPathForSessionRun, removeResultIndex, resultFilePath, retireResultSnapshot, withResultRunLease, writeAsyncResultFile } from "../background/result-files.ts";
 import { attachRootChildrenToSteps, createNestedRoute, findNestedControlResult, inheritedNestedParentAddressOf, inheritedNestedRouteOf, nestedRunNotActiveMessage, nestedRunScope, resolveNestedAsyncDir, retainNestedLookupRoute, snapshotNestedEventFiles, updateForegroundNestedProjection, writeNestedControlRequest, writeNestedEvent, type NestedParentAddress, type NestedRoute, type NestedRunResolutionScope } from "../shared/nested-events.ts";
 import type { ChildRuntimeConfig } from "../shared/child-runtime-config.ts";
 import { resolveSubagentRunId, type ResolvedSubagentRunId } from "../background/run-id-resolver.ts";
@@ -5700,7 +5700,7 @@ export function createSubagentExecutor(deps: ExecutorDeps): {
 						else console.error(`Failed to persist async workflow state '${filePath}':`, error);
 					},
 					write: (filePath, payload) => filePath === resultPath
-						? writeAsyncResultFile(filePath, payload as Record<string, unknown>)
+						? withResultRunLease(path.dirname(filePath), String((payload as Record<string, unknown>).runId ?? path.basename(filePath, ".json")), () => writeAsyncResultFile(filePath, payload as Record<string, unknown>))
 						: writeAtomicJson(filePath, payload),
 				});
 				let initialPersistenceComplete = false;

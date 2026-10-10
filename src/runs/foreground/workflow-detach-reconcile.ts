@@ -12,7 +12,7 @@ import {
 	type WorkflowTerminalResolution,
 } from "../../shared/types.ts";
 import { updateActiveRunIndex } from "../background/active-run-index.ts";
-import { resultFilePath, writeAsyncResultFile } from "../background/result-files.ts";
+import { resultFilePath, withResultRunLease, writeAsyncResultFile } from "../background/result-files.ts";
 import { resolveAsyncResumeTarget } from "../background/async-resume.ts";
 import { externalCliReceiptMetadata, normalizeExternalCliRunnerStatus } from "../shared/external-cli-contract.ts";
 import { outputPathMappingFromTask } from "../shared/single-output.ts";
@@ -261,7 +261,7 @@ export function reconcileDetachedWorkflowChildCompletion(input: {
 		job.steps = plan.status.steps?.map((step, index) => ({ ...step, index }));
 		job.workflow = plan.status.workflow;
 	}
-	writeAsyncResultFile(resultPath, plan.publicResult);
+	withResultRunLease(DIRS.results, input.childRunId, () => writeAsyncResultFile(resultPath, plan.publicResult));
 	if (receiptError) {
 		appendDetachedWorkflowEvent(asyncDir, {
 			ts: Date.now(),

@@ -361,6 +361,7 @@ function result(text: string, isError = false, completions?: WaitCompletion[]): 
 	for (const completion of completions ?? []) {
 		if (completion.workflowReceiptPath) text += `\nWorkflow receipt [${completion.runId}]: ${completion.workflowReceiptPath}`;
 	}
+	text = boundStatusResponse(text);
 	return {
 		content: [{ type: "text", text }],
 		...(isError ? { isError: true } : {}),
@@ -385,7 +386,7 @@ function windowElapsedResult(
 	activeProviderItems: readonly RegisteredBackgroundWorkItem[] = [],
 ): AgentToolResult<Details> {
 	return {
-		content: [{ type: "text", text }],
+		content: [{ type: "text", text: boundStatusResponse(text) }],
 		details: {
 			mode: "management",
 			results: [],

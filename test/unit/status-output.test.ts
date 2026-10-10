@@ -30,4 +30,12 @@ describe("boundStatusResponse", () => {
 		assert.match(text, /Run: active/);
 		assert.match(text, /Status output truncated/);
 	});
+
+	it("retains aggregated bg_wait retrieval pointers under the shared cap", () => {
+		const text = boundStatusResponse([`${"payload ".repeat(20_000)}`, ...Array.from({ length: 300 }, (_, index) => `Result [run-${index}]: /tmp/result-${index}.json`), "Workflow receipt [workflow-1]: /tmp/workflow.json"]);
+
+		assert.ok(byteLength(text) <= MAX_STATUS_RESPONSE_BYTES);
+		assert.match(text, /Result \[run-299\]: \/tmp\/result-299\.json/);
+		assert.match(text, /Workflow receipt \[workflow-1\]: \/tmp\/workflow\.json/);
+	});
 });
