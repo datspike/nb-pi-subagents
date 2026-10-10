@@ -75,7 +75,7 @@ import { assertAgentAllowedByCapabilityCeiling, intersectSubagentCapabilityCeili
 import { isAgentContract } from "../shared/agent-contract.ts";
 import { normalizeExtensionBindings, type ExtensionBindings } from "../shared/extension-bindings.ts";
 import { assertRequiredChildExtensionsAdmitted, hasMandatoryRequiredChildExtensions, readRetainedRequiredChildExtensions, resolveRequiredChildExtensions, type RequiredChildExtensionSnapshot } from "../../shared/required-child-extensions.ts";
-import { capInlineOutput, finalizeSingleOutput, injectSingleOutputInstruction, normalizeSingleOutputOverride, outputPathMappingFromTask, resolveSingleOutputPath, validateFileOnlyOutputMode } from "../shared/single-output.ts";
+import { capInlineOutput, finalizeSingleOutput, injectSingleOutputInstruction, normalizeSingleOutputOverride, outputPathMappingFromTask, resolveSingleOutputPath, truncateUtf8Head, validateFileOnlyOutputMode } from "../shared/single-output.ts";
 import { assertJsonSchemaObject, cleanupStructuredOutputRuntime, createStructuredOutputRuntime } from "../shared/structured-output.ts";
 import { compactForegroundDetails, getSingleResultOutput, PROMPT_REDACTED, readStatus, resolveChildCwd, sumResultsCost, sumResultsUsage, toAgentToolUsage } from "../../shared/utils.ts";
 import { discardPreservedWorktrees, formatParallelHandoffError, formatParallelHandoffReference, protectRetainedWorktreeForResume, formatStoredParallelHandoffCleanup, parallelHandoffPath, readParallelHandoffManifest, recordParallelHandoffMerge, recordParallelHandoffSupersession, writeParallelHandoffGroup, writeWorktreeSetupHandoff } from "../shared/parallel-handoff.ts";
@@ -2402,14 +2402,15 @@ async function resumeAsyncRun(input: {
 
 function resultSummaryForIntercom(result: SingleResult): string {
 	const output = getSingleResultOutput(result);
-	if (result.exitCode !== 0 && result.error) {
-		return output ? `${result.error}\n\nOutput:\n${output}` : result.error;
+	const error = result.error ? truncateUtf8Head(result.error, 2_000) : undefined;
+	if (result.exitCode !== 0 && error) {
+		return output ? `${error}\n\nOutput:\n${output}` : error;
 	}
-	return output || result.error || "(no output)";
+	return output || error || "(no output)";
 }
 
 function formatFailedSingleRunOutput(result: SingleResult, displayOutput: string): string {
-	const error = result.error || "Failed";
+	const error = truncateUtf8Head(result.error || "Failed", 2_000);
 	const output = displayOutput.trim();
 	const lines = [error];
 	let cappedOutput = output;

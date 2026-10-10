@@ -174,11 +174,21 @@ export function formatSavedOutputReference(savedPath: string, fullOutput: string
 	};
 }
 
-export const INLINE_OUTPUT_HEAD_CHARS = 2_000;
-/** Larger files are not read to check a cap; the output then stays whole. */
+export const INLINE_OUTPUT_HEAD_BYTES = 2_000;
+/** Larger files are not read to check a cap; the output then stays bounded but points to the recorded path. */
 const MAX_FULL_OUTPUT_FILE_BYTES = 50 * 1024 * 1024;
 /** The line finalizeSingleOutput appends when inline output was also saved to an explicit output file. */
 const SAVED_OUTPUT_LINE = /\n\nOutput saved to: (.+) \([^()\n]*\)\. Read this file if needed\.$/;
+const INLINE_TRUNCATION_MARKER = "\n…";
+
+export function truncateUtf8Head(value: string, maxBytes: number): string {
+	const bytes = Buffer.from(value, "utf-8");
+	if (bytes.length <= maxBytes) return value;
+	const markerBytes = Buffer.byteLength(INLINE_TRUNCATION_MARKER, "utf-8");
+	let end = Math.max(0, maxBytes - markerBytes);
+	while (end > 0 && (bytes[end]! & 0xc0) === 0x80) end -= 1;
+	return `${bytes.subarray(0, end).toString("utf-8")}${INLINE_TRUNCATION_MARKER}`;
+}
 
 function readFullOutputFile(filePath: string): string | undefined {
 	try {
@@ -191,7 +201,7 @@ function readFullOutputFile(filePath: string): string | undefined {
 }
 
 /**
- * Keeps at most INLINE_OUTPUT_HEAD_CHARS of a child's output inline and points to the file holding all of it.
+ * Keeps at most INLINE_OUTPUT_HEAD_BYTES of a child's output inline and points to the file holding all of it.
  * Files come only from run records, never from the child's text: a trailing `Output saved to:` line is kept as the
  * pointer only when it names the run's recorded saved-output path, and that recorded path is what gets read.
  * Short output stays whole; a long output without a verified retention artifact is bounded with an explicit unavailable notice.
@@ -201,24 +211,23 @@ export function capInlineOutput(output: string, files: { artifactPath?: string; 
 	const savedLine = match && files.savedPath && match[1] === path.resolve(files.savedPath) ? match : undefined;
 	const body = savedLine ? output.slice(0, savedLine.index) : output;
 	const filePath = savedLine ? files.savedPath : files.artifactPath;
-	if (body.length <= INLINE_OUTPUT_HEAD_CHARS) return output;
-	const lineEnd = body.lastIndexOf("\n", INLINE_OUTPUT_HEAD_CHARS);
-	let end = lineEnd >= INLINE_OUTPUT_HEAD_CHARS - 200 ? lineEnd : INLINE_OUTPUT_HEAD_CHARS;
-	if (/[\uD800-\uDBFF]/.test(body[end - 1] ?? "")) end -= 1;
+	if (Buffer.byteLength(body, "utf-8") <= INLINE_OUTPUT_HEAD_BYTES) return output;
 	const fullOutput = filePath ? readFullOutputFile(filePath) : undefined;
+	const prefix = truncateUtf8Head(body, INLINE_OUTPUT_HEAD_BYTES);
 	if (!filePath || fullOutput === undefined || !fullOutput.includes(body)) {
-		return `${body.slice(0, end)}\n…\nFull output unavailable: retention artifact was not verified.${savedLine ? output.slice(body.length) : ""}`;
+		const knownPath = filePath && fs.existsSync(filePath) ? `\nRetention artifact: ${path.resolve(filePath)}` : "";
+		return `${prefix}\nFull output unavailable: retention artifact was not verified.${knownPath}${savedLine ? output.slice(body.length) : ""}`;
 	}
-	if (savedLine) return `${body.slice(0, end)}\n…${output.slice(body.length)}`;
+	if (savedLine) return `${prefix}${output.slice(body.length)}`;
 	const reference = formatSavedOutputReference(filePath, fullOutput);
-	return `${body.slice(0, end)}\n…\nFull output: ${reference.path} (${formatByteSize(reference.bytes)}, ${reference.lines} ${reference.lines === 1 ? "line" : "lines"}). Read it if needed.`;
+	return `${prefix}\nFull output: ${reference.path} (${formatByteSize(reference.bytes)}, ${reference.lines} ${reference.lines === 1 ? "line" : "lines"}). Read it if needed.`;
 }
 
 /** Applies capInlineOutput to each `agent:\noutput` section of a run summary whose child output is long. */
 export function capSummaryOutputs(summary: string, results: ReadonlyArray<{ agent?: unknown; output?: unknown; artifactPaths?: { outputPath?: unknown }; artifactOutputSaveFailed?: unknown; savedOutputPath?: unknown }> | undefined): string {
 	let capped = summary;
 	for (const result of results ?? []) {
-		if (typeof result.agent !== "string" || typeof result.output !== "string" || result.output.length <= INLINE_OUTPUT_HEAD_CHARS) continue;
+		if (typeof result.agent !== "string" || typeof result.output !== "string" || Buffer.byteLength(result.output, "utf-8") <= INLINE_OUTPUT_HEAD_BYTES) continue;
 		const artifactPath = result.artifactOutputSaveFailed === true || typeof result.artifactPaths?.outputPath !== "string" ? undefined : result.artifactPaths.outputPath;
 		const savedPath = typeof result.savedOutputPath === "string" && result.savedOutputPath ? result.savedOutputPath : undefined;
 		const section = `${result.agent}:\n${result.output}`;

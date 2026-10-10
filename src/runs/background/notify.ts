@@ -173,6 +173,7 @@ const ERROR_LINE_MAX_BYTES = 300;
 const CHILD_OUTPUT_PREVIEW_COUNT = 8;
 const PREVIEW_TRUNCATION_MARKER = "...[preview truncated]";
 const COMPLETION_SEND_TTL_MS = 10 * 60 * 1000;
+const MAX_COMPLETION_NOTICE_BYTES = 16 * 1024;
 const COMPLETION_SEND_REGISTRY_CAP = 4_096;
 type CompletionChild = NonNullable<CompletionNotification["results"]>[number];
 interface RetainedPathError { path: string; code?: string; message: string }
@@ -627,7 +628,8 @@ const queuedWakes = wakeGlobal[queuedWakesSymbol] ?? (wakeGlobal[queuedWakesSymb
 function sendCompletion(pi: Pick<ParentWake, "sendMessage">, items: PendingCompletion[], unstartedWakes: string[]): boolean {
 	if (items.length === 0) return true;
 	const details = items.map((item) => item.details);
-	const content = details.length === 1 ? formatSingleCompletion(details[0]!) : formatGroupedCompletion(details);
+	const rawContent = details.length === 1 ? formatSingleCompletion(details[0]!) : formatGroupedCompletion(details);
+	const content = truncateUtf8Head(rawContent, MAX_COMPLETION_NOTICE_BYTES).text;
 	const display = details.some((detail) => detail.source === "foreground" || detail.status !== "completed" || detail.scheduleOrigin !== undefined);
 	const triggerTurn = items.some((item) => item.triggerTurn);
 	// Pi can queue an accepted wake behind the current turn or past agent_settled.

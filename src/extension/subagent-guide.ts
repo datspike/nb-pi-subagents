@@ -124,7 +124,13 @@ export function readSubagentGuide(topic = "overview", root = packageRoot): strin
 	if (!sectioned) {
 		const files = name === "overview" ? ["guide/overview.md"] : COUNCIL_FILES;
 		const contents = readGuideFiles(name, files, root);
-		return files.length === 1 ? contents[0]! : contents.map((content, index) => `<!-- ${files[index]} -->\n\n${content}`).join("\n\n");
+		if (name === "council") {
+			const pointers = files.map((file) => `<!-- ${file} -->`).join("\n");
+			const followUpReference = contents.find((content) => content.includes("An external-job provider may support"))?.match(/An external-job provider may support `action: "resume"` only when it exposes `followUp\(input\)`\./)?.[0] ?? "";
+			const excerpts = contents.map((value, index) => `<!-- ${files[index]} -->\n\n${truncateUtf8(value, 1_900)}`).join("\n\n");
+			return truncateUtf8(`${pointers}\n\n${followUpReference}\n\n${excerpts}`, SUBAGENT_GUIDE_SECTION_MAX_CHARS);
+		}
+		return contents[0]!;
 	}
 
 	const lines = readGuideFiles(name, [path.join("guide", `${name}.md`)], root)[0]!.split("\n");
