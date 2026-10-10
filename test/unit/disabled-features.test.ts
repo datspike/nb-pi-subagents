@@ -179,7 +179,7 @@ describe("disabled feature discovery", () => {
 			for (const line of SUBAGENT_SAFETY_GUIDANCE.split("\n").filter((text) => !/runs\.|workflow call/.test(text))) assert.ok(description.includes(line), `${toolDescriptionMode ?? "default"} description lacks safety line ${line}`);
 			assert.match(description, /thinking is a model suffix like :high\./);
 		}
-		assert.match(buildSubagentToolDescription({ toolDescriptionMode: "full" }, { disabledFeatures }), /Management discovery: list\/get\/models\/guide; doctor\. Use guide topics agents, observability, tool-reference, configuration, models or extension-api for/);
+		assert.match(buildSubagentToolDescription({ toolDescriptionMode: "full" }, { disabledFeatures }), /Management discovery: list\/get\/models\/guide; doctor\. Use guide topics agents\/choose-an-agent, observability\/inspect-the-fleet-or-one-transcript, tool-reference, configuration, models or extension-api for/);
 	});
 
 	it("lists only enabled actions for an unknown action", async () => {
