@@ -45,6 +45,7 @@ interface DoctorReportInput {
 	sessionError?: string;
 	expandTilde?: (value: string) => string;
 	paths?: DoctorPaths;
+	projectTrusted?: boolean;
 	deps?: Partial<DoctorDeps>;
 }
 
@@ -137,7 +138,7 @@ function formatSessionLines(input: DoctorReportInput): string[] {
 function formatDiscovery(input: DoctorReportInput, deps: DoctorDeps): string[] {
 	return [
 		lineFromCheck("agents", () => {
-			const discovered = deps.discoverAgentsAll(input.cwd);
+			const discovered = deps.discoverAgentsAll(input.cwd, undefined, { projectTrusted: input.projectTrusted });
 			const agentCounts = {
 				builtin: discovered.builtin.length,
 				package: discovered.package?.length ?? 0,
@@ -152,7 +153,7 @@ function formatDiscovery(input: DoctorReportInput, deps: DoctorDeps): string[] {
 			].join("\n");
 		}),
 		lineFromCheck("skills", () => {
-			const skills = deps.discoverAvailableSkills(input.cwd);
+			const skills = deps.discoverAvailableSkills(input.cwd, { projectTrusted: input.projectTrusted });
 			return `- skills: total ${skills.length} (${formatSkillSourceCounts(skills)})`;
 		}),
 	];

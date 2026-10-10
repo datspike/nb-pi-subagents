@@ -223,6 +223,22 @@ export function capInlineOutput(output: string, files: { artifactPath?: string; 
 	return `${prefix}\nFull output: ${reference.path} (${formatByteSize(reference.bytes)}, ${reference.lines} ${reference.lines === 1 ? "line" : "lines"}). Read it if needed.`;
 }
 
+/** Keep final foreground metadata visible while bounding body text and appended suffixes. */
+export function capFinalInlineOutput(
+	output: string,
+	files: { artifactPath?: string; savedPath?: string },
+	suffix = "",
+	maxBytes = 8 * 1024,
+): string {
+	const capped = capInlineOutput(output, files);
+	if (Buffer.byteLength(`${capped}${suffix}`, "utf-8") <= maxBytes) return `${capped}${suffix}`;
+	const metadata = capped.split("\n").filter((line) => /(?:Output saved to:|Full output:|Retention artifact:)/.test(line)).join("\n");
+	const metadataBytes = metadata ? Buffer.byteLength(`\n${metadata}`, "utf-8") : 0;
+	const suffixBytes = Buffer.byteLength(suffix, "utf-8");
+	const head = truncateUtf8Head(output, Math.max(0, maxBytes - metadataBytes - suffixBytes - 1));
+	return `${head}${metadata ? `\n${metadata}` : ""}${suffix}`;
+}
+
 /** Applies capInlineOutput to each `agent:\noutput` section of a run summary whose child output is long. */
 export function capSummaryOutputs(summary: string, results: ReadonlyArray<{ agent?: unknown; output?: unknown; artifactPaths?: { outputPath?: unknown }; artifactOutputSaveFailed?: unknown; savedOutputPath?: unknown }> | undefined): string {
 	let capped = summary;

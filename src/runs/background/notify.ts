@@ -500,15 +500,43 @@ export function parseSubagentNotifyContent(content: string): SubagentNotifyDetai
 	};
 }
 
+function formatGroupedMetadata(details: SubagentNotifyDetails[]): string[] {
+	if (!details.some((detail) => detail.childRuns?.length || detail.childOutputs?.length || detail.workflowReceiptPath || detail.workflowRunId || detail.handoffPath)) return [];
+	const lines = ["Run metadata:"];
+	for (let index = 0; index < details.length; index++) {
+		const detail = details[index];
+		if (!detail) continue;
+		lines.push(`- ${index + 1}. ${boundedSafeText(detail.agent)} status=${boundedSafeText(detail.status)}`);
+		if (detail.workflowReceiptPath) lines.push(`  Workflow receipt: ${boundedSafeText(detail.workflowReceiptPath)}`);
+		if (detail.workflowRunId) lines.push(`  Workflow run: ${boundedSafeText(detail.workflowRunId)}`);
+		for (const child of detail.childRuns ?? []) {
+			lines.push(`  Child run: ${boundedSafeText(child.runId)}${child.workflowKey ? ` key=${boundedSafeText(child.workflowKey)}` : ""}${child.status ? ` status=${boundedSafeText(child.status)}` : ""}`);
+		}
+		for (const child of detail.childOutputs ?? []) {
+			const childIdentity = child.runId ? ` ${boundedSafeText(child.runId)}` : "";
+			lines.push(`  Child output${childIdentity}: status=${boundedSafeText(child.status)}`);
+			if (child.savedOutputPath) lines.push(`    Saved output: ${boundedSafeText(child.savedOutputPath)}`);
+			if (child.outputArtifactPath) lines.push(`    Output artifact: ${boundedSafeText(child.outputArtifactPath)}`);
+			if (child.structuredOutputPath) lines.push(`    Structured output: ${boundedSafeText(child.structuredOutputPath)}`);
+			if (child.error) lines.push(`    Error: ${firstErrorLine(child.error) ?? "unavailable"}`);
+		}
+		for (const line of formatCorrelationLines(detail)) lines.push(`  ${line}`);
+		if (detail.handoffPath) lines.push(`  Parallel handoff: ${boundedSafeText(detail.handoffPath)}`);
+		const sessionLine = formatSessionLine(detail);
+		if (sessionLine) lines.push(`  ${sessionLine}`);
+	}
+	return lines;
+}
+
 export function formatGroupedCompletion(details: SubagentNotifyDetails[]): string {
 	const header = `Background tasks completed (${details.length}): ${details.map((d) => `**${d.agent}**${d.taskInfo ?? ""}`).join(", ")}`;
-	const blocks: string[] = [header, ""];
+	const metadata = formatGroupedMetadata(details);
+	const blocks: string[] = metadata.length ? [header, "", ...metadata, ""] : [header, ""];
 	for (let index = 0; index < details.length; index++) {
 		const detail = details[index];
 		if (!detail) continue;
 		const sessionLine = formatSessionLine(detail);
 		blocks.push(`${index + 1}. ${detail.agent}${detail.taskInfo ?? ""}${detail.scheduleOrigin ? ` — scheduled run from ${detail.scheduleOrigin.name ?? detail.scheduleOrigin.id} (schedule ${detail.scheduleOrigin.id})` : ""}`);
-		if (detail.workflowReceiptPath) blocks.push(`Workflow receipt: ${detail.workflowReceiptPath}`);
 		blocks.push(formatResultPreview(detail));
 		blocks.push(...formatWatchdogBlockerLines(detail));
 		if (detail.handoffPath) blocks.push(`Parallel handoff: ${detail.handoffPath}`);

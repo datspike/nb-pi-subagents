@@ -52,7 +52,7 @@ interface SkillSearchPath {
 const skillCache = new Map<string, SkillCacheEntry>();
 const MAX_CACHE_SIZE = 50;
 
-let loadSkillsCache: { cwd: string; agentDir: string; skills: CachedSkillEntry[]; timestamp: number } | null = null;
+let loadSkillsCache: { cwd: string; agentDir: string; projectTrusted: boolean; skills: CachedSkillEntry[]; timestamp: number } | null = null;
 const LOAD_SKILLS_CACHE_TTL_MS = 5000;
 
 const SUBAGENT_ORCHESTRATION_SKILL = "pi-subagents";
@@ -339,17 +339,19 @@ function collectSettingsPackageSkillPaths(cwd: string, agentDir: string): SkillS
 	return results;
 }
 
-function buildSkillPaths(cwd: string, agentDir: string): SkillSearchPath[] {
+function buildSkillPaths(cwd: string, agentDir: string, projectTrusted = true): SkillSearchPath[] {
 	const projectConfigDir = getProjectConfigDir(cwd);
 	const skillPaths: SkillSearchPath[] = [
-		{ path: path.join(projectConfigDir, "skills"), source: "project" },
-		{ path: path.join(cwd, ".agents", "skills"), source: "project" },
+		...(projectTrusted ? [
+			{ path: path.join(projectConfigDir, "skills"), source: "project" as const },
+			{ path: path.join(cwd, ".agents", "skills"), source: "project" as const },
+			...collectSettingsPackageSkillPaths(cwd, agentDir),
+			...extractSkillPathsFromPackageRoot(cwd, "project-package"),
+			...collectSettingsSkillPaths(cwd, agentDir),
+		] : []),
 		{ path: path.join(agentDir, "skills"), source: "user" },
 		{ path: path.join(os.homedir(), ".agents", "skills"), source: "user" },
-		...collectInstalledPackageSkillPaths(cwd, agentDir),
-		...collectSettingsPackageSkillPaths(cwd, agentDir),
-		...extractSkillPathsFromPackageRoot(cwd, "project-package"),
-		...collectSettingsSkillPaths(cwd, agentDir),
+		...collectInstalledPackageSkillPaths(cwd, agentDir).filter((entry) => projectTrusted || !entry.source.startsWith("project")),
 	];
 
 	const deduped = new Map<string, SkillSearchPath>();
@@ -576,14 +578,14 @@ function collectFilesystemSkills(cwd: string, agentDir: string, skillPaths: Skil
 	return entries;
 }
 
-function getCachedSkills(cwd: string): CachedSkillEntry[] {
+function getCachedSkills(cwd: string, projectTrusted = true): CachedSkillEntry[] {
 	const now = Date.now();
 	const agentDir = getAgentDir();
-	if (loadSkillsCache && loadSkillsCache.cwd === cwd && loadSkillsCache.agentDir === agentDir && now - loadSkillsCache.timestamp < LOAD_SKILLS_CACHE_TTL_MS) {
+	if (loadSkillsCache && loadSkillsCache.cwd === cwd && loadSkillsCache.agentDir === agentDir && loadSkillsCache.projectTrusted === projectTrusted && now - loadSkillsCache.timestamp < LOAD_SKILLS_CACHE_TTL_MS) {
 		return loadSkillsCache.skills;
 	}
 
-	const skillPaths = buildSkillPaths(cwd, agentDir);
+	const skillPaths = buildSkillPaths(cwd, agentDir, projectTrusted);
 	const loaded = collectFilesystemSkills(cwd, agentDir, skillPaths);
 	const dedupedByName = new Map<string, CachedSkillEntry>();
 
@@ -593,7 +595,7 @@ function getCachedSkills(cwd: string): CachedSkillEntry[] {
 	}
 
 	const skills = [...dedupedByName.values()].sort((a, b) => a.order - b.order);
-	loadSkillsCache = { cwd, agentDir, skills, timestamp: now };
+	loadSkillsCache = { cwd, agentDir, projectTrusted, skills, timestamp: now };
 	return skills;
 }
 
@@ -763,13 +765,13 @@ export function normalizeSkillInput(
 	return [...new Set(input.split(",").map((s) => s.trim()).filter((s) => s.length > 0))];
 }
 
-export function discoverAvailableSkills(cwd: string): Array<{
+export function discoverAvailableSkills(cwd: string, options: { projectTrusted?: boolean } = {}): Array<{
 	name: string;
 	source: SkillSource;
 	description?: string;
 	disableModelInvocation?: boolean;
 }> {
-	const skills = getCachedSkills(cwd);
+	const skills = getCachedSkills(cwd, options.projectTrusted !== false);
 	return skills
 		.filter((s) => s.name !== SUBAGENT_ORCHESTRATION_SKILL)
 		.map((s) => ({
