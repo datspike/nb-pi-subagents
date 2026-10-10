@@ -27,6 +27,7 @@ import { formatTimeoutRecoveryLines, projectTimeoutRecovery } from "../shared/mu
 import { formatWorkflowChecklistText, projectWorkflowChecklist } from "../../workflows/workflow-checklist.ts";
 import type { RawDrainStatusObserver } from "../shared/readonly-drain-observation.ts";
 import { childWatchdogProgressForModel } from "../../watchdog/child-status.ts";
+import { boundStatusResponse } from "../shared/status-output.ts";
 
 interface AsyncRunStepSummary {
 	index: number;
@@ -769,5 +770,5 @@ export function formatAsyncRunList(runs: AsyncRunSummary[], heading = "Active as
 		if (run.sessionFile) lines.push(`  session: ${shortenPath(run.sessionFile)}`);
 		lines.push("");
 	}
-	return lines.join("\n").trimEnd();
+	return boundStatusResponse(lines.join("\n").trimEnd());
 }

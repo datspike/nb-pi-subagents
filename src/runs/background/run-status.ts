@@ -35,16 +35,9 @@ import { formatWorkflowChecklistText, projectWorkflowChecklist } from "../../wor
 import { validHostStepNodes } from "../shared/host-step-status.ts";
 import { workflowAsyncChildSteeringGuidance } from "../shared/workflow-async-child-guidance.ts";
 import { formatWorkflowKeyRevival, projectWorkflowKeyRevival } from "../../workflows/workflow-revival.ts";
-import { capSummaryOutputs, truncateUtf8Head } from "../shared/single-output.ts";
+import { capSummaryOutputs } from "../shared/single-output.ts";
+import { boundStatusResponse } from "../shared/status-output.ts";
 
-const MAX_STATUS_RESPONSE_BYTES = 16 * 1024;
-function boundStatusResponse(lines: string[]): string {
-	const text = lines.join("\n");
-	if (Buffer.byteLength(text, "utf-8") <= MAX_STATUS_RESPONSE_BYTES) return text;
-	const evidence = lines.filter((line) => /^(Run:|Status:|Output:|Result:|Workflow receipt:|Session:|Dir:|Log:|Events:|  Child run:)/.test(line)).slice(-24);
-	const tail = evidence.length ? `\n\nStatus output truncated. Retrieval metadata:\n${evidence.join("\n")}` : "\n\nStatus output truncated.";
-	return truncateUtf8Head(text, Math.max(1, MAX_STATUS_RESPONSE_BYTES - Buffer.byteLength(tail, "utf-8"))) + tail;
-}
 /** A step whose structured output has a path line needs only a short inline preview. */
 const STRUCTURED_PREVIEW_WITH_PATH_CHARS = 500;
 
@@ -404,7 +397,7 @@ export function inspectSubagentStatus(params: RunStatusParams, deps: RunStatusDe
 			}
 			const waitSubscriptions = deps.state ? formatWaitSubscriptions(deps.state, deps.now?.() ?? Date.now()) : undefined;
 			return {
-				content: [{ type: "text", text: [formatAsyncRunList(runs), waitSubscriptions].filter(Boolean).join("\n\n") }],
+				content: [{ type: "text", text: boundStatusResponse([formatAsyncRunList(runs), waitSubscriptions].filter(Boolean).join("\n\n")) }],
 				details: { mode: "single", results: [] },
 			};
 		} catch (error) {
@@ -436,7 +429,7 @@ export function inspectSubagentStatus(params: RunStatusParams, deps: RunStatusDe
 				if (run) {
 					try {
 						return {
-							content: [{ type: "text", text: params.view === "transcript" ? formatRememberedForegroundTranscript(run, { index: params.index, lines: params.lines }) : formatRememberedForegroundStatus(run) }],
+							content: [{ type: "text", text: params.view === "transcript" ? formatRememberedForegroundTranscript(run, { index: params.index, lines: params.lines }) : boundStatusResponse(formatRememberedForegroundStatus(run)) }],
 							details: { mode: "single", results: [] },
 						};
 					} catch (error) {
