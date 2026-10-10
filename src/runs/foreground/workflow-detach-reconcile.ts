@@ -261,7 +261,7 @@ export function reconcileDetachedWorkflowChildCompletion(input: {
 		job.steps = plan.status.steps?.map((step, index) => ({ ...step, index }));
 		job.workflow = plan.status.workflow;
 	}
-	withResultRunLease(DIRS.results, input.childRunId, () => writeAsyncResultFile(resultPath, plan.publicResult));
+	withResultRunLease(path.dirname(resultPath), input.workflowRunId, () => writeAsyncResultFile(resultPath, plan.publicResult));
 	if (receiptError) {
 		appendDetachedWorkflowEvent(asyncDir, {
 			ts: Date.now(),
