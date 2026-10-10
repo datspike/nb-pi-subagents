@@ -388,4 +388,13 @@ describe("finalizeSingleOutput", () => {
 		assert.match(result, /Worktree handoff: \/tmp\/handoff\.json/);
 		assert.match(result, /Full patches: \/tmp\/patches/);
 	});
+
+	it("keeps both worktree pointers when paths are long", () => {
+		const handoff = `/tmp/${"h".repeat(1_900)}.json`;
+		const patches = `/tmp/${"p".repeat(1_900)}`;
+		const result = capFinalInlineOutput("body", {}, `\n\n${"diff ".repeat(10_000)}\nWorktree handoff: ${handoff}\nFull patches: ${patches}`, 8192);
+		assert.ok(Buffer.byteLength(result, "utf-8") <= 8192);
+		assert.match(result, /Worktree handoff:/);
+		assert.match(result, /Full patches:/);
+	});
 });

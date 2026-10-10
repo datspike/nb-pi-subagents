@@ -239,10 +239,9 @@ export function capFinalInlineOutput(
 	const suffixLines = suffix.split(/\r?\n/).filter(Boolean);
 	const pointerLines = suffixLines.filter((line) => /^(?:Worktree handoff:|Full patches:|Worktree finalization retained)/.test(line));
 	const previewLines = suffixLines.filter((line) => !pointerLines.includes(line));
-	const pointerText = pointerLines.join("\n");
 	const previewText = previewLines.join("\n");
-	const pointerBudget = pointerText ? Math.min(Buffer.byteLength(pointerText, "utf-8"), Math.floor(suffixBudget * 0.7)) : 0;
-	const boundedPointers = truncateUtf8Head(pointerText, pointerBudget);
+	const pointerBudgetEach = pointerLines.length > 0 ? Math.max(1, Math.floor(suffixBudget * 0.4)) : 0;
+	const boundedPointers = pointerLines.map((line) => truncateUtf8Head(line, pointerBudgetEach)).join("\n");
 	const previewBudget = Math.max(0, suffixBudget - Buffer.byteLength(boundedPointers, "utf-8") - (boundedPointers && previewText ? 1 : 0));
 	const boundedPreview = truncateUtf8Head(previewText, previewBudget);
 	const suffixText = [boundedPreview, boundedPointers].filter(Boolean).length > 0 ? `\n${[boundedPreview, boundedPointers].filter(Boolean).join("\n")}` : "";
