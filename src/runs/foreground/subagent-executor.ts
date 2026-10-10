@@ -4536,7 +4536,7 @@ async function runSinglePath(data: ExecutionContextData, deps: ExecutorDeps): Pr
 
 	if (r.exitCode !== 0)
 		return {
-			content: [{ type: "text", text: `${formatFailedSingleRunOutput(r, finalizedOutput.displayOutput)}${worktreeSuffix}` }],
+			content: [{ type: "text", text: capFinalInlineOutput(formatFailedSingleRunOutput(r, finalizedOutput.displayOutput), { artifactPath: r.artifactPaths?.outputPath, savedPath: finalizedOutput.savedPath }, worktreeSuffix) }],
 			details,
 			isError: true,
 		};
@@ -7057,11 +7057,12 @@ export function createSubagentExecutor(deps: ExecutorDeps): {
 				const targetLabel = action === "debug.run" ? "Debug run" : formatStatusTargetLabel(paramsWithResolvedCwd, targetRunId);
 				const withBudget = (result: AgentToolResult<Details>) => {
 					const budgeted = withSpawnBudgetStatus(result, deps.state, deps.config, deps.state.currentSessionId);
+					const decorated = budgeted.content.map((item, index) => index === 0 && item.type === "text"
+						? { ...item, text: `${targetLabel}\n${item.text}` }
+						: item);
 					return {
 						...budgeted,
-						content: budgeted.content.map((item, index) => index === 0 && item.type === "text"
-							? { ...item, text: `${targetLabel}\n${item.text}` }
-							: item),
+						content: paramsWithResolvedCwd.view === "transcript" ? decorated : decorated.map((item, index) => index === 0 && item.type === "text" ? { ...item, text: boundStatusResponse(item.text) } : item),
 					};
 				};
 				const nestedScope = nestedResolutionScopeForExecutor(deps);

@@ -182,6 +182,7 @@ const SAVED_OUTPUT_LINE = /\n\nOutput saved to: (.+) \([^()\n]*\)\. Read this fi
 const INLINE_TRUNCATION_MARKER = "\n…";
 
 export function truncateUtf8Head(value: string, maxBytes: number): string {
+	if (maxBytes <= 0) return "";
 	const bytes = Buffer.from(value, "utf-8");
 	if (bytes.length <= maxBytes) return value;
 	const markerBytes = Buffer.byteLength(INLINE_TRUNCATION_MARKER, "utf-8");
@@ -233,10 +234,11 @@ export function capFinalInlineOutput(
 	const capped = capInlineOutput(output, files);
 	if (Buffer.byteLength(`${capped}${suffix}`, "utf-8") <= maxBytes) return `${capped}${suffix}`;
 	const metadata = capped.split("\n").filter((line) => /(?:Output saved to:|Full output:|Retention artifact:)/.test(line)).join("\n");
-	const metadataBytes = metadata ? Buffer.byteLength(`\n${metadata}`, "utf-8") : 0;
-	const suffixBytes = Buffer.byteLength(suffix, "utf-8");
-	const head = truncateUtf8Head(output, Math.max(0, maxBytes - metadataBytes - suffixBytes - 1));
-	return `${head}${metadata ? `\n${metadata}` : ""}${suffix}`;
+	const metadataText = metadata ? `\n${truncateUtf8Head(metadata, Math.min(2048, Math.floor(maxBytes / 3)))}` : "";
+	const suffixText = suffix ? truncateUtf8Head(suffix, Math.min(4096, Math.floor(maxBytes / 3))) : "";
+	const reservedBytes = Buffer.byteLength(`${metadataText}${suffixText}`, "utf-8");
+	if (reservedBytes >= maxBytes) return truncateUtf8Head(`${metadataText}${suffixText}`, maxBytes);
+	return `${truncateUtf8Head(output, maxBytes - reservedBytes)}${metadataText}${suffixText}`;
 }
 
 /** Applies capInlineOutput to each `agent:\noutput` section of a run summary whose child output is long. */

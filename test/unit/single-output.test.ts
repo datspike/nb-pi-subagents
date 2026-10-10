@@ -5,6 +5,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import type { Message, Usage } from "@earendil-works/pi-ai";
 import {
+	capFinalInlineOutput,
 	captureSingleOutputSnapshot,
 	extractChildWrittenOutput,
 	finalizeSingleOutput,
@@ -15,6 +16,7 @@ import {
 	requestedOutputPathFromTask,
 	resolveSingleOutput,
 	resolveSingleOutputPath,
+	truncateUtf8Head,
 	validateFileOnlyOutputMode,
 } from "../../src/runs/shared/single-output.ts";
 
@@ -369,5 +371,14 @@ describe("finalizeSingleOutput", () => {
 		});
 
 		assert.equal(result.displayOutput.match(/Output saved to:/g)?.length, 1);
+	});
+
+	it("keeps final inline output bounded when suffix metadata exceeds the remaining budget", () => {
+		const result = capFinalInlineOutput("body", {}, "\n\n" + "x".repeat(20_000), 1024);
+		assert.ok(Buffer.byteLength(result, "utf-8") <= 1024);
+	});
+
+	it("does not emit a truncation marker when no bytes are available", () => {
+		assert.equal(truncateUtf8Head("hello", 0), "");
 	});
 });
