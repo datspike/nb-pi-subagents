@@ -142,10 +142,11 @@ function effectiveAgentsForScope(
 	d: DiscoveredAgentSets,
 	runtimeAgentOwner?: RuntimeAgentOwner,
 	preferredModelProvider?: string,
-): AgentConfig[] {
+	projectTrusted?: boolean,
+ ): AgentConfig[] {
 	let agents = mergeAgentsForScope(scope, d.user, d.project, d.builtin, d.package);
 	if (runtimeAgentOwner) {
-		agents = mergeRuntimeAgents(runtimeAgentOwner, { agents }, allAgents(d), { cwd: d.cwd, scope, preferredModelProvider }).agents;
+		agents = mergeRuntimeAgents(runtimeAgentOwner, { agents }, allAgents(d), { cwd: d.cwd, scope, preferredModelProvider, projectTrusted }).agents;
 	}
 	return agents;
 }
@@ -154,13 +155,14 @@ function availableAgentNamesFromDiscovery(
 	d: DiscoveredAgentSets,
 	runtimeAgentOwner?: RuntimeAgentOwner,
 	preferredModelProvider?: string,
-): string[] {
-	const agents = runtimeAgentOwner ? effectiveAgentsForScope("both", d, runtimeAgentOwner, preferredModelProvider) : allAgents(d);
+	projectTrusted?: boolean,
+ ): string[] {
+	const agents = runtimeAgentOwner ? effectiveAgentsForScope("both", d, runtimeAgentOwner, preferredModelProvider, projectTrusted) : allAgents(d);
 	return [...new Set(agents.map((agent) => agent.name))].sort((a, b) => a.localeCompare(b));
 }
 
 function availableAgentNames(ctx: ManagementContext, cwd: string = ctx.cwd): string[] {
-	return availableAgentNamesFromDiscovery(discoverCatalog(ctx, cwd));
+	return availableAgentNamesFromDiscovery(discoverCatalog(ctx, cwd), ctx.runtimeAgentOwner, ctx.model?.provider, ctx.projectTrusted);
 }
 
 function findAgentsInDiscovery(
@@ -169,10 +171,11 @@ function findAgentsInDiscovery(
 	scope: AgentScope = "both",
 	runtimeAgentOwner?: RuntimeAgentOwner,
 	preferredModelProvider?: string,
-): AgentConfig[] {
+	projectTrusted?: boolean,
+ ): AgentConfig[] {
 	const raw = name.trim();
 	const sanitized = sanitizeName(raw);
-	const scoped = effectiveAgentsForScope(scope, d, runtimeAgentOwner, preferredModelProvider);
+	const scoped = effectiveAgentsForScope(scope, d, runtimeAgentOwner, preferredModelProvider, projectTrusted);
 	let resolved = resolveAgentName(raw, scoped);
 	if (!resolved.agent && !resolved.error && sanitized !== raw) resolved = resolveAgentName(sanitized, scoped);
 	if (resolved.agent) return scoped.filter((agent) => agent.name === resolved.agent!.name).sort((a, b) => a.source.localeCompare(b.source));
@@ -183,7 +186,7 @@ function findAgentsInDiscovery(
 }
 
 function findAgents(name: string, ctx: ManagementContext, scope: AgentScope = "both"): AgentConfig[] {
-	return findAgentsInDiscovery(name, discoverCatalog(ctx), scope);
+	return findAgentsInDiscovery(name, discoverCatalog(ctx), scope, undefined, undefined, ctx.projectTrusted);
 }
 
 function diagnosticsForScope(diagnostics: AgentDiscoveryDiagnostic[] | undefined, scope: AgentScope): AgentDiscoveryDiagnostic[] | undefined {
@@ -974,7 +977,7 @@ function formatAgentDetail(agent: AgentConfig): string {
 export function handleList(params: ManagementParams, ctx: ManagementContext): AgentToolResult<Details> {
 	const scope = normalizeListScope(params.agentScope) ?? "both";
 	const d = discoverCatalog(ctx, ctx.cwd, ctx.model?.provider);
-	let scopedAgents = effectiveAgentsForScope(scope, d, ctx.runtimeAgentOwner, ctx.model?.provider);
+	let scopedAgents = effectiveAgentsForScope(scope, d, ctx.runtimeAgentOwner, ctx.model?.provider, ctx.projectTrusted);
 	scopedAgents = scopedAgents
 		.sort((a, b) => a.name.localeCompare(b.name));
 	const capabilityCeiling = resolveCurrentSubagentCapabilityCeiling(ctx.currentSessionId);
@@ -1030,7 +1033,7 @@ function handleModels(params: ManagementParams, ctx: ManagementContext): AgentTo
 	if (!scope) return result("agentScope must be 'user', 'project', or 'both' for models.", true);
 
 	const discovered = discoverCatalog(ctx, ctx.cwd, ctx.model?.provider);
-	const effectiveAgents = effectiveAgentsForScope(scope, discovered, ctx.runtimeAgentOwner, ctx.model?.provider)
+	const effectiveAgents = effectiveAgentsForScope(scope, discovered, ctx.runtimeAgentOwner, ctx.model?.provider, ctx.projectTrusted)
 		.sort((a, b) => a.name.localeCompare(b.name));
 	const availableModels = ctx.modelRegistry.getAvailable().map(toModelInfo);
 	const currentModel = ctx.model ? { provider: ctx.model.provider, id: ctx.model.id } : undefined;
@@ -1039,7 +1042,7 @@ function handleModels(params: ManagementParams, ctx: ManagementContext): AgentTo
 
 	let selectedAgents = effectiveAgents;
 	if (requestedAgent) {
-		const matches = findAgentsInDiscovery(requestedAgent, discovered, scope, ctx.runtimeAgentOwner, ctx.model?.provider);
+		const matches = findAgentsInDiscovery(requestedAgent, discovered, scope, ctx.runtimeAgentOwner, ctx.model?.provider, ctx.projectTrusted);
 		const diagnostics = diagnosticsForScope(discovered.agentDiagnostics, scope);
 		const normalizedName = sanitizeName(requestedAgent);
 		const diagnostic = findBlockingAgentDiagnostic(requestedAgent, matches, diagnostics)
@@ -1048,7 +1051,7 @@ function handleModels(params: ManagementParams, ctx: ManagementContext): AgentTo
 		const distinctNames = [...new Set(matches.map((agent) => agent.name))];
 		if (distinctNames.length > 1) return result(`Ambiguous agent alias or name '${params.agent}': ${distinctNames.sort((a, b) => a.localeCompare(b)).join(", ")}`, true);
 		if (!matches.length) {
-			return result(`Agent '${params.agent}' not found. Available: ${availableAgentNamesFromDiscovery(discovered, ctx.runtimeAgentOwner, ctx.model?.provider).join(", ") || "none"}.`, true);
+			return result(`Agent '${params.agent}' not found. Available: ${availableAgentNamesFromDiscovery(discovered, ctx.runtimeAgentOwner, ctx.model?.provider, ctx.projectTrusted).join(", ") || "none"}.`, true);
 		}
 		selectedAgents = [matches[0]!];
 	}

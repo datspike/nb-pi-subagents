@@ -307,5 +307,17 @@ describe("agent discovery snapshots", () => {
 		assert.equal(discoverAgents(project, "both").agents.some((agent) => agent.name === "probe"), false);
 		assert.equal(discoverAgents(project, "both", undefined, untrusted).agents.some((agent) => agent.name === "probe"), true);
 		assert.equal(discoverAgents(project, "both").agents.some((agent) => agent.name === "probe"), false);
+	writeJson(projectSettings, { subagents: { defaultModel: "project/default" } });
+	const runtimeRegistration = registerAgent({ pi, name: "runtime-settings-probe", definition: { description: "Runtime settings probe", systemPrompt: "Runtime." } });
+	try {
+		const trustedSnapshot = discoverAgentSnapshot(project, "both");
+		const untrustedSnapshot = discoverAgentSnapshot(project, "both", undefined, { includeChains: false, projectTrusted: false });
+		const trusted = mergeRuntimeAgents(pi, trustedSnapshot.effective, trustedSnapshot.effective.agents, { cwd: project, scope: trustedSnapshot.effective.scope });
+		const untrusted = mergeRuntimeAgents(pi, untrustedSnapshot.effective, untrustedSnapshot.effective.agents, { cwd: project, scope: untrustedSnapshot.effective.scope, projectTrusted: false });
+		assert.equal(trusted.agents.find((agent) => agent.name === "runtime-settings-probe")?.model, "project/default");
+		assert.equal(untrusted.agents.find((agent) => agent.name === "runtime-settings-probe")?.model, undefined);
+	} finally {
+		runtimeRegistration.dispose();
+	}
 	});
 });
