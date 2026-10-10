@@ -299,7 +299,7 @@ function buildFailedRepair(status: AsyncStatus, asyncDir: string, now: number, r
 
 function writeFailedRepair(asyncDir: string, status: AsyncStatus, resultPath: string, now: number, reason?: string): ReconcileAsyncRunResult {
 	const repair = buildFailedRepair(status, asyncDir, now, reason);
-	if (repair.result.sessionId) withResultRunLease(DIRS.results, repair.status.runId, () => writeAsyncResultFile(resultPath, repair.result));
+	if (repair.result.sessionId) withResultRunLease(path.dirname(resultPath), repair.status.runId, () => writeAsyncResultFile(resultPath, repair.result));
 	writeAtomicJson(path.join(asyncDir, "status.json"), repair.status);
 	updateActiveRunIndex(asyncDir, repair.status.state, repair.status.toolCallId);
 	appendJsonlBestEffort(path.join(asyncDir, "events.jsonl"), {
