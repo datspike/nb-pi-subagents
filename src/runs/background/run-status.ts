@@ -450,7 +450,7 @@ export function inspectSubagentStatus(params: RunStatusParams, deps: RunStatusDe
 						return { content: [{ type: "text", text: message }], isError: true, details: { mode: "single", results: [] } };
 					}
 				}
-				return { content: [{ type: "text", text: formatNestedExactStatus(nested.match.rootRunId, nested.match.run) }], details: { mode: "single", results: [] } };
+				return { content: [{ type: "text", text: boundStatusResponse(formatNestedExactStatus(nested.match.rootRunId, nested.match.run)) }], details: { mode: "single", results: [] } };
 			}
 			if (resolved?.kind === "async") location = resolved.location;
 			else location = { asyncDir: null, resultPath: null, resolvedId: requestedId };

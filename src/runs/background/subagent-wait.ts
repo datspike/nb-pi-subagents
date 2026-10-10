@@ -553,7 +553,7 @@ function detachedForegroundWaitUpdate(run: ForegroundResumeRun, pendingIndices: 
 		if (!activity && child.transcriptPath) lines.push("  live transcript has no new activity yet");
 		if (!child.transcriptPath) lines.push("  live transcript unavailable; waiting for completion event");
 	}
-	return result(lines.join("\n"));
+	return result(boundStatusResponse(lines.join("\n")));
 }
 
 async function waitForDetachedForegroundRun(
