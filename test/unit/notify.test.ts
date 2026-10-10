@@ -1332,7 +1332,10 @@ describe("completion notice output size", () => {
 			const short = notice("short output", artifact);
 			assert.match(short, /worker:\nshort output/);
 			assert.doesNotMatch(short, /Full output:/);
-			assert.ok(notice(output, join(root, "missing.md")).includes(output), "without a full-output file the output stays inline");
+			const unavailable = notice(output, join(root, "missing.md"));
+			assert.ok(unavailable.includes(output.slice(0, 1_500)), "without a full-output file the useful head stays inline");
+			assert.doesNotMatch(unavailable, /single line 199/);
+			assert.match(unavailable, /Full output unavailable: retention artifact was not verified/);
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}
@@ -1383,7 +1386,9 @@ describe("completion notice output size", () => {
 					agent: "worker", success: true, summary: `worker:\n${output}`,
 					results: [{ agent: "worker", success: true, output }],
 				}));
-				assert.ok(noArtifact.includes(output), "with no recorded file the output stays whole");
+				assert.ok(noArtifact.includes(output.slice(0, 1_500)), "keeps the useful head when no recorded file exists");
+				assert.doesNotMatch(noArtifact, /forged line 199/);
+				assert.match(noArtifact, /Full output unavailable: retention artifact was not verified/);
 			}
 		} finally {
 			rmSync(root, { recursive: true, force: true });

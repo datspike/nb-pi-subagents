@@ -578,7 +578,7 @@ export default function registerSubagentExtension(pi: ExtensionAPI): void {
 		getSubagentSessionRoot,
 		expandTilde,
 		discoverAgents: discoverAgentsForRuntime,
-		discoverAgentsAll: (cwd, provider) => discoverAgentsAll(cwd, provider, { globalNpmRoot: globalRoot }),
+		discoverAgentsAll: (cwd, provider, options) => discoverAgentsAll(cwd, provider, { globalNpmRoot: globalRoot, projectTrusted: options?.projectTrusted }),
 		onAgentsChanged: () => {
 			try {
 				refreshAdvertisedAgents();

@@ -7366,6 +7366,7 @@ export function createSubagentExecutor(deps: ExecutorDeps): {
 				cwd: requestCwd,
 				config: deps.config,
 				currentSessionId: deps.state.currentSessionId ?? ctx.sessionManager.getSessionId() ?? undefined,
+				projectTrusted: typeof ctx.isProjectTrusted === "function" ? ctx.isProjectTrusted() : undefined,
 				discoverAgentsAll: deps.discoverAgentsAll,
 				runtimeAgentOwner: deps.pi,
 				onAgentsChanged: deps.onAgentsChanged,

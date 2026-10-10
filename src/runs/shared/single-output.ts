@@ -194,19 +194,21 @@ function readFullOutputFile(filePath: string): string | undefined {
  * Keeps at most INLINE_OUTPUT_HEAD_CHARS of a child's output inline and points to the file holding all of it.
  * Files come only from run records, never from the child's text: a trailing `Output saved to:` line is kept as the
  * pointer only when it names the run's recorded saved-output path, and that recorded path is what gets read.
- * Output stays whole when it is short or no readable file contains it, so no text is lost.
+ * Short output stays whole; a long output without a verified retention artifact is bounded with an explicit unavailable notice.
  */
 export function capInlineOutput(output: string, files: { artifactPath?: string; savedPath?: string }): string {
 	const match = files.savedPath ? output.match(SAVED_OUTPUT_LINE) : null;
 	const savedLine = match && files.savedPath && match[1] === path.resolve(files.savedPath) ? match : undefined;
 	const body = savedLine ? output.slice(0, savedLine.index) : output;
 	const filePath = savedLine ? files.savedPath : files.artifactPath;
-	if (body.length <= INLINE_OUTPUT_HEAD_CHARS || !filePath) return output;
-	const fullOutput = readFullOutputFile(filePath);
-	if (fullOutput === undefined || !fullOutput.includes(body)) return output;
+	if (body.length <= INLINE_OUTPUT_HEAD_CHARS) return output;
 	const lineEnd = body.lastIndexOf("\n", INLINE_OUTPUT_HEAD_CHARS);
 	let end = lineEnd >= INLINE_OUTPUT_HEAD_CHARS - 200 ? lineEnd : INLINE_OUTPUT_HEAD_CHARS;
 	if (/[\uD800-\uDBFF]/.test(body[end - 1] ?? "")) end -= 1;
+	const fullOutput = filePath ? readFullOutputFile(filePath) : undefined;
+	if (!filePath || fullOutput === undefined || !fullOutput.includes(body)) {
+		return `${body.slice(0, end)}\n…\nFull output unavailable: retention artifact was not verified.${savedLine ? output.slice(body.length) : ""}`;
+	}
 	if (savedLine) return `${body.slice(0, end)}\n…${output.slice(body.length)}`;
 	const reference = formatSavedOutputReference(filePath, fullOutput);
 	return `${body.slice(0, end)}\n…\nFull output: ${reference.path} (${formatByteSize(reference.bytes)}, ${reference.lines} ${reference.lines === 1 ? "line" : "lines"}). Read it if needed.`;

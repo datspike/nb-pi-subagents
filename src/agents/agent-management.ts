@@ -43,10 +43,10 @@ import { listExternalJobProviders } from "../api/external-job-provider.ts";
 
 type ManagementAction = "list" | "get" | "models" | "create" | "update" | "delete" | "eject" | "disable" | "enable" | "reset";
 type ManagementScope = "user" | "project";
-type ManagementContext = Pick<ExtensionContext, "cwd" | "modelRegistry"> & { model?: ExtensionContext["model"]; config?: ExtensionConfig; currentSessionId?: string; runtimeAgentOwner?: RuntimeAgentOwner; onAgentsChanged?: () => void; discoverAgentsAll?: typeof discoverAgentsAll };
+type ManagementContext = Pick<ExtensionContext, "cwd" | "modelRegistry"> & { model?: ExtensionContext["model"]; config?: ExtensionConfig; currentSessionId?: string; projectTrusted?: boolean; runtimeAgentOwner?: RuntimeAgentOwner; onAgentsChanged?: () => void; discoverAgentsAll?: typeof discoverAgentsAll };
 
 function discoverCatalog(ctx: ManagementContext, cwd: string = ctx.cwd, provider?: string): AgentDiscoveryAllResult {
-	return (ctx.discoverAgentsAll ?? discoverAgentsAll)(cwd, provider);
+	return (ctx.discoverAgentsAll ?? discoverAgentsAll)(cwd, provider, { projectTrusted: ctx.projectTrusted });
 }
 
 interface ManagementParams {
