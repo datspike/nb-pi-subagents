@@ -28,6 +28,7 @@ import { readReplyWorkflowScript } from "../../extension/reply-workflow-script.t
 import { disabledFeatureNotice, disabledFeatureUseError, resolveDisabledFeatureSurface, type DisabledFeatureSurface } from "../../shared/disabled-features.ts";
 import { runSync } from "./execution.ts";
 import { commandAction } from "./command-action.ts";
+import { resolveCommandNoticeOperations } from "../shared/command-notice.ts";
 import { handleWatchdogToolAction, WATCHDOG_TOOL_ACTIONS } from "../../watchdog/tool-actions.ts";
 import type { MainWatchdogRuntime } from "../../watchdog/runtime.ts";
 import { applyWatchdogLaunchRules } from "../../watchdog/rules.ts";
@@ -1133,6 +1134,7 @@ function emitAdvisoryControlEvent(pi: ExtensionAPI, channel: string, payload: un
 }
 
 function persistAsyncWorkflowControlEvent(input: {
+	commandOperations: ReturnType<typeof resolveCommandNoticeOperations>;
 	job: AsyncJobState;
 	event: ControlEvent;
 	controlConfig: ResolvedControlConfig;
@@ -1150,12 +1152,12 @@ function persistAsyncWorkflowControlEvent(input: {
 		event: input.event,
 		channels,
 		childIntercomTarget: input.childIntercomTarget,
-		noticeText: formatControlNoticeMessage(input.event, input.childIntercomTarget),
+		noticeText: formatControlNoticeMessage(input.event, input.childIntercomTarget, input.commandOperations),
 		...(input.intercomBridge.active && input.intercomBridge.orchestratorTarget && channels.includes("intercom")
 			? {
 				intercom: {
 					to: input.intercomBridge.orchestratorTarget,
-					message: formatControlIntercomMessage(input.event, input.childIntercomTarget),
+					message: formatControlIntercomMessage(input.event, input.childIntercomTarget, input.commandOperations),
 				},
 			}
 			: {}),
@@ -1169,6 +1171,7 @@ function persistAsyncWorkflowControlEvent(input: {
 }
 
 function emitControlNotification(input: {
+	commandOperations: ReturnType<typeof resolveCommandNoticeOperations>;
 	pi: ExtensionAPI;
 	controlConfig: ResolvedControlConfig;
 	intercomBridge: IntercomBridgeState;
@@ -1183,7 +1186,7 @@ function emitControlNotification(input: {
 		event: input.event,
 		source: input.source ?? "foreground",
 		childIntercomTarget,
-		noticeText: formatControlNoticeMessage(input.event, childIntercomTarget),
+		noticeText: formatControlNoticeMessage(input.event, childIntercomTarget, input.commandOperations),
 	};
 	if (input.controlConfig.notifyChannels.includes("event")) {
 		emitAdvisoryControlEvent(input.pi, SUBAGENT_CONTROL_EVENT, payload);
@@ -1192,7 +1195,7 @@ function emitControlNotification(input: {
 		emitAdvisoryControlEvent(input.pi, SUBAGENT_CONTROL_INTERCOM_EVENT, {
 			...payload,
 			to: input.intercomBridge.orchestratorTarget,
-			message: formatControlIntercomMessage(input.event, childIntercomTarget),
+			message: formatControlIntercomMessage(input.event, childIntercomTarget, input.commandOperations),
 		});
 	}
 }
@@ -2413,8 +2416,10 @@ function createForegroundControlNotifier(data: Pick<ExecutionContextData, "contr
 			? data.params.workflowKey.trim()
 			: undefined;
 		const enriched = workflowKey && !event.workflowKey ? { ...event, workflowKey } : event;
+		const commandOperations = resolveCommandNoticeOperations(enriched, { state: deps.state });
 		if (asyncWorkflow) {
 			persistAsyncWorkflowControlEvent({
+				commandOperations,
 				job: asyncWorkflow,
 				event: enriched,
 				controlConfig: data.controlConfig,
@@ -2425,6 +2430,7 @@ function createForegroundControlNotifier(data: Pick<ExecutionContextData, "contr
 			});
 		}
 		emitControlNotification({
+			commandOperations,
 			pi: deps.pi,
 			controlConfig: data.controlConfig,
 			intercomBridge: eventBridge,
@@ -6581,7 +6587,7 @@ export function createSubagentExecutor(deps: ExecutorDeps): {
 				});
 				return attachWorkflowMission(withRunFanoutBudget({
 					content: [{ type: "text", text: displayText }],
-					details: compactOptional<Details>({ mode: "workflow", runId: foregroundWorkflowRunId, results: workflowDetailsResults(workflow.children), ...(workflowPreflight ? { preflight: workflowPreflight } : {}), workflowChildren, totalChildUsage: sumResultsUsage(workflowResults), totalCost: sumResultsCost(workflowResults), usageBudget: usageBudgetState(workflowUsageBudget.budget, sumResultsCost(workflowResults)), workflow: { value: workflow.value, trace: finalPreflightTrace, emits: workflow.emits, console: workflow.console, ...(workflowArgsEvidence ?? {}), ...(workflowResource ? { resource: workflowResource.provenance } : {}), ...(finalPreflightWarnings.length ? { preflightWarnings: finalPreflightWarnings } : {}), receipt }, chatProgress }),
+					details: compactOptional<Details>({ mode: "workflow", runId: foregroundWorkflowRunId, results: workflowDetailsResults(workflow.children), ...(workflowPreflight ? { preflight: workflowPreflight } : {}), workflowChildren, totalChildUsage: sumResultsUsage(workflowResults), totalCost: sumResultsCost(workflowResults), usageBudget: usageBudgetState(workflowUsageBudget.budget, sumResultsCost(workflowResults)), workflow: { value: workflow.value, trace: finalPreflightTrace, emits: workflow.emits, console: workflow.console, ...workflowArgsEvidence, ...(workflowResource ? { resource: workflowResource.provenance } : {}), ...(finalPreflightWarnings.length ? { preflightWarnings: finalPreflightWarnings } : {}), receipt }, chatProgress }),
 				}, workflowFanoutBudget));
 			} catch (error) {
 				const partial = error instanceof WorkflowScriptError ? error.partial : { trace: [], emits: [], console: [], children: [] };
@@ -6613,7 +6619,7 @@ export function createSubagentExecutor(deps: ExecutorDeps): {
 				return attachWorkflowMission(withRunFanoutBudget({
 					content: [{ type: "text", text: displayText }],
 					isError: true,
-					details: compactOptional<Details>({ mode: "workflow", runId: foregroundWorkflowRunId, results: workflowDetailsResults(partial.children), ...(workflowPreflight ? { preflight: workflowPreflight } : {}), workflowChildren, totalChildUsage: sumResultsUsage(workflowResults), totalCost: sumResultsCost(workflowResults), usageBudget: usageBudgetState(workflowUsageBudget.budget, sumResultsCost(workflowResults)), workflow: { trace: finalPreflightTrace, emits: partial.emits, console: partial.console, ...(error instanceof WorkflowScriptError && error.errorKind ? { failureKind: error.errorKind } : {}), ...(workflowArgsEvidence ?? {}), ...(workflowResource ? { resource: workflowResource.provenance } : {}), ...(finalPreflightWarnings.length ? { preflightWarnings: finalPreflightWarnings } : {}), receipt }, chatProgress }),
+					details: compactOptional<Details>({ mode: "workflow", runId: foregroundWorkflowRunId, results: workflowDetailsResults(partial.children), ...(workflowPreflight ? { preflight: workflowPreflight } : {}), workflowChildren, totalChildUsage: sumResultsUsage(workflowResults), totalCost: sumResultsCost(workflowResults), usageBudget: usageBudgetState(workflowUsageBudget.budget, sumResultsCost(workflowResults)), workflow: { trace: finalPreflightTrace, emits: partial.emits, console: partial.console, ...(error instanceof WorkflowScriptError && error.errorKind ? { failureKind: error.errorKind } : {}), ...workflowArgsEvidence, ...(workflowResource ? { resource: workflowResource.provenance } : {}), ...(finalPreflightWarnings.length ? { preflightWarnings: finalPreflightWarnings } : {}), receipt }, chatProgress }),
 				}, workflowFanoutBudget));
 			} finally {
 				workflowProgressClosed = true;

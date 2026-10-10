@@ -24,7 +24,7 @@ describe("subagent control attention state", () => {
 		assert.equal(claimControlNotification(resolveControlConfig(), event, seen), true);
 		assert.equal(claimControlNotification(resolveControlConfig(), { ...event, ts: event.ts + 1000 }, seen), false);
 		assert.equal(claimControlNotification(resolveControlConfig(), { ...event, toolCallId: "second" }, seen), true);
-		const notice = formatControlNoticeMessage({ ...event, index: 2 });
+		const notice = formatControlNoticeMessage({ ...event, index: 2 }, undefined, ["status", "yield", "cancel"]);
 		assert.match(notice, /"action":"command.cancel","id":"run","index":2,"toolCallId":"first"/);
 		assert.match(notice, /"action":"command.yield"/);
 	});
@@ -238,7 +238,7 @@ describe("subagent control attention state", () => {
 		assert.match(message, /A queued steer does not cancel an in-flight bash call/);
 		assert.match(message, /dev server or watch command/);
 		assert.match(message, /Elapsed time alone does not prove/);
-		assert.match(message, /yield a needed persistent command or cancel the exact incorrect command/);
+		assert.match(message, /Native command controls are not confirmed/);
 		assert.match(message, /Transcript: subagent\(\{ action: "status", id: "78f659a3", view: "transcript" \}\)/);
 		assert.doesNotMatch(message, /live async nudge|live nested nudge|Interrupt:|Direct intercom target:/);
 		assert.match(formatControlIntercomMessage(event), /A queued steer does not cancel an in-flight bash call/);

@@ -5,7 +5,8 @@ import type { ResolvedSubagentRunId } from "../background/run-id-resolver.ts";
 import { supervisorChannelDir } from "../shared/child-tool-plan.ts";
 import { controlChildCommand, type CommandOperation } from "../shared/child-commands.ts";
 
-function commandChildren(state: SubagentState, target: ResolvedSubagentRunId): Array<{ index: number; agent: string }> {
+/** Resolve only direct children owned by the current parent session; shared with advisory notices. */
+export function commandChildren(state: SubagentState, target: ResolvedSubagentRunId): Array<{ index: number; agent: string }> {
 	if (!state.currentSessionId) throw new Error("Command controls require an owning parent session.");
 	if (target.kind === "nested") throw new Error("Command controls support direct local Pi children only.");
 	if (target.kind === "foreground") {

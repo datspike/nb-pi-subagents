@@ -63,6 +63,7 @@ import {
 	formatControlNoticeMessage,
 	shouldEmitOpenToolAttention,
 } from "../shared/subagent-control.ts";
+import { resolveCommandNoticeOperations } from "../shared/command-notice.ts";
 import {
 	type RunnerSubagentStep as SubagentStep,
 	type RunnerStep,
@@ -2730,16 +2731,19 @@ export async function runSubagent(
 			? controlConfig.notifyChannels.filter((channel) => channel !== "intercom")
 			: controlConfig.notifyChannels;
 		if (channels.length === 0 || !claimControlNotification(controlConfig, event, emittedControlEventKeys, childIntercomTarget)) return;
+		const commandOperations = resolveCommandNoticeOperations(event, event.index !== undefined && contextStep?.agent === event.agent
+			? { actor: { runId: id, agent: contextStep.agent, index: event.index, startedAt: contextStep.startedAt ?? statusPayload.startedAt, live: contextStep.status === "running" } }
+			: {});
 		appendJsonl(eventsPath, JSON.stringify({
 			type: "subagent.control",
 			event,
 			channels,
 			childIntercomTarget,
-			noticeText: formatControlNoticeMessage(event, childIntercomTarget),
+			noticeText: formatControlNoticeMessage(event, childIntercomTarget, commandOperations),
 			...(config.controlIntercomTarget && channels.includes("intercom") ? {
 				intercom: {
 					to: config.controlIntercomTarget,
-					message: formatControlIntercomMessage(event, childIntercomTarget),
+					message: formatControlIntercomMessage(event, childIntercomTarget, commandOperations),
 				},
 			} : {}),
 		}));

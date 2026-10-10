@@ -2,7 +2,8 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { renderWidget, widgetRenderKey } from "../../tui/render.ts";
-import { formatControlNoticeMessage } from "../shared/subagent-control.ts";
+import { formatControlIntercomMessage, formatControlNoticeMessage } from "../shared/subagent-control.ts";
+import { resolveCommandNoticeOperations } from "../shared/command-notice.ts";
 import {
 	type AsyncJobState,
 	type AsyncStartedEvent,
@@ -347,12 +348,19 @@ export function createAsyncJobTracker(pi: Pick<ExtensionAPI, "events">, state: S
 				const record = candidate as ControlRecord;
 				const supervisorRequest = record.event.type === "needs_attention" && record.event.reason === "supervisor_request" && options.supervisorRequestState !== undefined;
 				if (supervisorRequest && readSupervisorRequestState(record.event, job.asyncDir) === "resolved") return;
+				const openBashNotice = record.event.type === "needs_attention" && record.event.reason === "tool_open_threshold" && record.event.currentTool === "bash";
+				const commandOperations = openBashNotice ? resolveCommandNoticeOperations(record.event, { state }) : [];
+				const deliveryRecord = openBashNotice && record.intercom
+					? { ...record, intercom: { ...record.intercom, message: formatControlIntercomMessage(record.event, record.childIntercomTarget, commandOperations) } }
+					: record;
 				const payload: ControlPayload = {
 					event: record.event,
 					source: "async",
 					asyncDir: job.asyncDir,
 					childIntercomTarget: record.childIntercomTarget,
-					noticeText: record.noticeText ?? formatControlNoticeMessage(record.event, record.childIntercomTarget),
+					noticeText: openBashNotice
+						? formatControlNoticeMessage(record.event, record.childIntercomTarget, commandOperations)
+						: record.noticeText ?? formatControlNoticeMessage(record.event, record.childIntercomTarget),
 				};
 				// External intercom asks have no native lifecycle to re-check, so they keep the immediate notice.
 				if (supervisorRequest && record.event.currentTool !== "intercom") {
@@ -361,7 +369,7 @@ export function createAsyncJobTracker(pi: Pick<ExtensionAPI, "events">, state: S
 					scheduleSupervisorNotice(job.asyncId, record, payload);
 					return;
 				}
-				deliverControlRecord(record, payload);
+				deliverControlRecord(deliveryRecord, payload);
 			};
 			let readCursor = cursor;
 			let lastCompleteCursor = cursor;

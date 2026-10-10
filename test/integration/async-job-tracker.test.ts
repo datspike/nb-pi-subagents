@@ -1,3 +1,8 @@
+import { randomUUID } from "node:crypto";
+import { supervisorChannelDir } from "../../src/runs/shared/child-tool-plan.ts";
+import { formatControlNoticeMessage, formatControlIntercomMessage } from "../../src/runs/shared/subagent-control.ts";
+import { currentPidNamespaceScope } from "../../src/runs/background/pid-namespace.ts";
+import type { SubagentState } from "../../src/shared/types.ts";
 import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -46,7 +51,7 @@ type AsyncJobTracker = ReturnType<AsyncJobTrackerModule["createAsyncJobTracker"]
 const activeTrackers = new Set<AsyncJobTracker>();
 
 function createTracker(...args: Parameters<AsyncJobTrackerModule["createAsyncJobTracker"]>): AsyncJobTracker {
-	args[3] = { platform: "linux", ...(args[3] ?? {}) };
+	args[3] = { platform: "linux", ...args[3] };
 	const tracker = trackerMod!.createAsyncJobTracker(...args);
 	activeTrackers.add(tracker);
 	return tracker;
@@ -2375,4 +2380,53 @@ describe("async job tracker", { skip: !available ? "pi packages not available" :
 			removeTempDir(asyncRoot);
 		}
 	});
+});
+
+describe("command notice replay", { skip: !available ? "pi packages not available" : undefined }, () => {
+	for (const phase of ["running", "yielded", "closed", "orphaned", "missing", "equal", "equal-closed"] as const) {
+		it(`refreshes both channels for ${phase} without rewriting stored history or trusting the workflow PID`, async () => {
+			const asyncRoot = createTempDir("pi-command-notice-replay-");
+			const jobId = `envelope-${randomUUID()}`;
+			const childId = `direct-child-${randomUUID()}`;
+			const runDir = path.join(asyncRoot, jobId);
+			const channel = supervisorChannelDir(childId, "worker", 0);
+			let tracker: AsyncJobTracker | undefined;
+			try {
+				writeRunningAsyncStatus(runDir, jobId, "owner-session");
+				const statusPath = path.join(runDir, "status.json");
+				fs.writeFileSync(statusPath, JSON.stringify({ ...JSON.parse(fs.readFileSync(statusPath, "utf8")), pid: process.pid, pidNamespaceScope: currentPidNamespaceScope() }));
+				const event: ControlEvent = { type: "needs_attention", to: "needs_attention", ts: Date.now(), runId: childId, agent: "worker", index: 0, reason: "tool_open_threshold", currentTool: "bash", toolCallId: "exact-call", message: "Bash still open" };
+				const original = `${JSON.stringify({ type: "subagent.control", runId: jobId, event, channels: ["event", "intercom"],
+					noticeText: formatControlNoticeMessage(event, undefined, ["status", "yield", "cancel"]),
+					intercom: { to: "main", message: formatControlIntercomMessage(event, undefined, ["status", "yield", "cancel"]) } })}\n`;
+				fs.writeFileSync(path.join(runDir, "events.jsonl"), original);
+				if (phase !== "missing") {
+					fs.mkdirSync(channel, { recursive: true });
+					const closed = phase === "closed" || phase === "equal-closed";
+					fs.writeFileSync(path.join(channel, "commands.json"), JSON.stringify({ ownerId: phase.startsWith("equal") ? "replacement-owner" : "native-owner", closed, commands: [{ toolCallId: "exact-call", state: closed ? "cancelled" : phase === "yielded" ? "yielded" : "running", startedAt: phase.startsWith("equal") ? event.ts : 200, output: "" }] }));
+				}
+				// SAFETY: The fixture provides all state maps and fields exercised by this tracker's notice-delivery path.
+				const state = createState() as SubagentState;
+				state.currentSessionId = "owner-session";
+				state.foregroundRuns!.set(childId, { runId: childId, mode: "single", cwd: process.cwd(), updatedAt: 100, sessionId: "owner-session", children: [{ index: 0, agent: "worker", status: "completed" }] });
+				if (phase === "running" || phase === "yielded" || phase === "equal") state.foregroundControls.set(childId, { runId: childId, sessionId: "owner-session", mode: "single", startedAt: 100, updatedAt: 100, activeChildren: new Map([[0, { index: 0, agent: "worker", startedAt: phase === "equal" ? event.ts : 100, updatedAt: 100, interrupt: () => true }]]) });
+				const recorder = createEventRecorder();
+				tracker = createTracker(recorder.pi, state, asyncRoot, { pollIntervalMs: 10 });
+				tracker.handleStarted({ id: jobId, asyncDir: runDir, agent: "worker", sessionId: "owner-session" });
+				for (let attempt = 0; attempt < 50 && !recorder.events.some((item) => item.channel === SUBAGENT_CONTROL_INTERCOM_EVENT); attempt++) await new Promise((resolve) => setTimeout(resolve, 10));
+				// SAFETY: This event is emitted by the tracker under test with its parent-notice payload contract.
+				const parent = recorder.events.find((item) => item.channel === SUBAGENT_CONTROL_EVENT)?.data as { noticeText?: string } | undefined;
+				// SAFETY: This event is emitted by the tracker under test with its intercom-notice payload contract.
+				const intercom = recorder.events.find((item) => item.channel === SUBAGENT_CONTROL_INTERCOM_EVENT)?.data as { message?: string } | undefined;
+				assert.ok(parent?.noticeText); assert.ok(intercom?.message);
+				assert.ok(intercom.message.endsWith(parent.noticeText));
+				const expected = phase === "running" ? ["status", "yield", "cancel"] : phase === "yielded" ? ["status", "cancel"] : phase === "closed" ? ["status"] : [];
+				for (const operation of ["status", "yield", "cancel"]) assert.equal(parent.noticeText.includes(`"action":"command.${operation}"`), expected.includes(operation));
+				assert.match(parent.noticeText, /Transcript:/);
+				assert.equal(fs.readFileSync(path.join(runDir, "events.jsonl"), "utf8"), original);
+				await new Promise((resolve) => setTimeout(resolve, 30));
+				assert.equal(recorder.events.filter((item) => item.channel === SUBAGENT_CONTROL_EVENT).length, 1);
+			} finally { tracker?.resetJobs(); removeTempDir(asyncRoot); fs.rmSync(channel, { recursive: true, force: true }); }
+		});
+	}
 });

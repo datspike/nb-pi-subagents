@@ -345,6 +345,11 @@ subagent_command({ action: "cancel", toolCallId: "<returned-call-id>", waitMs: 1
 
 `yieldTimeMs` and `waitMs` range from 0 to 30,000 milliseconds. Omitting `yieldTimeMs` preserves completion-waiting behavior. Yielded handles are not successful exits. Status includes running/yielded/cancel-requested states and completed/failed/cancelled terminal states, a bounded output tail, and Pi's full-output file path when available. Recent terminal history retains 20 commands; active commands remain tracked.
 
+Long-open bash notices offer only operations confirmed for the exact owned child, recorded child `index`, and retained `toolCallId`. Running commands offer status, yield, and cancel; yielded commands offer status and cancel; terminal commands and `cancel_requested` offer status only. A closed controller, whose inbox no longer accepts commands, still offers retained status without command IPC. An open snapshot alone does not prove that its owner is available; unconfirmed control routes keep ordinary run status and transcript inspection instead.
+If the command's start and the recorded notice have equal millisecond timestamps, the owner cannot be distinguished reliably. Concrete command hints are withheld, while ordinary run status and transcript inspection remain available.
+
+Async bash notices refresh both the parent text and its intercom copy immediately before delivery, rather than trusting previously saved command hints. Already delivered messages and the original event journal remain unchanged. Availability can change after a notice is prepared; the command API remains authoritative.
+
 Commands remain owned by the child session. Normal completion with unfinished commands cancels them and fails the run. Interrupt, stop, timeout, and disposal clean up owned commands. Controls do not transfer processes out of the child or create detached services. Native bash `timeout` remains command-scoped; `toolTimeoutMs` covers an open tool call and does not become a yielded process deadline.
 
 ### resume

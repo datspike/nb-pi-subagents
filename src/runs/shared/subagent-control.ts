@@ -7,6 +7,7 @@ import {
 	type ResolvedControlConfig,
 } from "../../shared/types.ts";
 import { isToolTimeoutExempt } from "./tool-timeout.ts";
+import type { CommandOperation } from "./child-commands.ts";
 import { createHash } from "node:crypto";
 import { previewDisplayText } from "../../shared/display-text.ts";
 
@@ -224,7 +225,7 @@ export function formatControlNudge(event: ControlEvent): string {
 	return "What are you blocked on? Reply with the smallest next step or ask for a decision.";
 }
 
-export function formatControlNoticeMessage(event: ControlEvent, childIntercomTarget?: string): string {
+export function formatControlNoticeMessage(event: ControlEvent, childIntercomTarget?: string, commandOperations: readonly CommandOperation[] = []): string {
 	const runTarget = event.runId;
 	const nudgeMessage = formatControlNudge(event);
 	const steerCommand = `subagent({ action: "steer", id: "${runTarget}", ${event.index !== undefined ? `index: ${event.index}, ` : ""}message: ${JSON.stringify(nudgeMessage)} })`;
@@ -255,8 +256,14 @@ export function formatControlNoticeMessage(event: ControlEvent, childIntercomTar
 		return lines([
 			...head("Subagent needs attention"),
 			"Hint: Inspect the running command and recent output before nudging. A queued steer does not cancel an in-flight bash call. A dev server or watch command may intentionally never return. Elapsed time alone does not prove the command is stuck.",
-			"Recovery: For a local Pi child explicitly granted subagent_command, yield a needed persistent command or cancel the exact incorrect command, then steer the child. Query command.status to confirm the result. If command controls are unavailable, inspect partial changes and interruption scope before interrupt/resume; interrupt is run-scoped and may affect siblings.",
-			...(event.toolCallId ? [command("Command", "command.status"), command("Yield", "command.yield"), command("Cancel", "command.cancel")] : []),
+			commandOperations.includes("status")
+				? `Recovery: ${commandOperations.includes("yield") ? "Yield a needed persistent command. " : ""}${commandOperations.includes("cancel") ? "Cancel only the exact incorrect command. " : ""}Query command.status to inspect or confirm the result; check terminal state before finishing. A steer alone does not stop the command.`
+				: "Recovery: Native command controls are not confirmed for this call. Inspect partial changes and interruption scope before interrupt/resume; interrupt is run-scoped and may affect siblings.",
+			...(event.toolCallId ? [
+				...(commandOperations.includes("status") ? [command("Command", "command.status")] : []),
+				...(commandOperations.includes("yield") ? [command("Yield", "command.yield")] : []),
+				...(commandOperations.includes("cancel") ? [command("Cancel", "command.cancel")] : []),
+			] : []),
 			status,
 			`Transcript: subagent({ action: "status", id: "${runTarget}", view: "transcript"${event.index !== undefined ? `, index: ${event.index}` : ""} })`,
 		]);
@@ -279,7 +286,7 @@ export function formatControlNoticeMessage(event: ControlEvent, childIntercomTar
 }
 
 
-export function formatControlIntercomMessage(event: ControlEvent, childIntercomTarget?: string): string {
+export function formatControlIntercomMessage(event: ControlEvent, childIntercomTarget?: string, commandOperations: readonly CommandOperation[] = []): string {
 	const statusLabel = event.type === "active_long_running"
 			? "subagent active but long-running"
 			: "subagent needs attention";
@@ -290,6 +297,6 @@ export function formatControlIntercomMessage(event: ControlEvent, childIntercomT
 				? `${event.agent} is still active but long-running in run ${event.runId}.`
 				: `${event.agent} needs attention in run ${event.runId}.`,
 		"",
-		formatControlNoticeMessage(event, childIntercomTarget),
+		formatControlNoticeMessage(event, childIntercomTarget, commandOperations),
 	].join("\n");
 }
