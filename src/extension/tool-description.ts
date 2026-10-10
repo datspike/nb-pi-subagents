@@ -25,20 +25,20 @@ const safetyGuidance = (on: FeatureText) => `SAFETY-CRITICAL SUBAGENT GUIDANCE:
 • Launch is async by default. After it, end the turn: completion arrives as a message in this session. Do not poll with status, sleep or bg_wait to check on it; bg_wait is only for provider/detached work with no completion message that you need this turn. async:false only to block the parent, not for final reviews.
 • One writer per cwd/worktree; isolate concurrent writers. For independent review use a fresh-context read-only reviewer, then synthesize and fix yourself. Ordinary children are not orchestrators.
 • Bind durable output ${on("workflow-scripts", "on runs.run/runs.all", "with output")}, not in task prose; report the returned outputReference/artifactPaths, evidence and residual risks.
-• Control a known run by exact id: status, steer, interrupt, stop, resume (resume checks eligibility and may reject). Resume rules, children.list, command.status and run artifacts: guide tool-reference.`;
+• Control a known run by exact id: status, steer, interrupt, stop, resume (resume checks eligibility and may reject). Resume and control rules: guide tool-reference/inspect-status-steer-yield-cancel-or-stop and tool-reference/resume-a-retained-child.`;
 
 const scriptExecutionGuidance = (on: FeatureText) => `Delegate one child with {agent,task}, or run a multi-child workflow script: write one \`\`\`js block in this reply, then call subagent({workflow:true}). workflow:'path.js' (any value with '/') loads a script from cwd; any other string names a resource, e.g. {workflow:'review',args:{task:'...'}}. agent/task exclude workflow; task excludes action.
 Script body: statements with an explicit return and top-level await, no nested async helpers. Await runs.run('key',{agent,task}) before reading .output; runs.all([{key,agent,task}]) returns an ordered array. Await every stored run promise. Steer a prior run with runs.steer(key,message), never a raw run id. No filesystem, shell or Pi tools; args are persisted, so never put secrets in them.
 To override a model call {action:"models"} and copy the exact provider/id; thinking is a model suffix like :high${on("watchdog", ", not watchdog-only thinking")}.
 worktree:true needs a clean tree; baseRef is HEAD or a named ref, never a commit id.
-Before using lanes, rolling fanout, missions, acceptance, ${on("tool-budgets", "tool budgets, ")}structured output, fast, fork context or skills/tools, read {action:"guide",topic:"workflows"} or "tool-reference".`;
+Before using lanes, rolling fanout, missions, acceptance, ${on("tool-budgets", "tool budgets, ")}structured output, fast, fork context or skills/tools, read {action:"guide",topic:"workflows/start-a-workflow-script"} or "tool-reference/bound-execution-and-output".`;
 
 const structuredExecutionGuidance = (on: FeatureText) => `Delegate one child with {agent,task}. tasks:[{agent,task},...] runs children in parallel. chain:[{agent,task?,as?} or {parallel:[{agent,task},...]}] runs steps in order; a parallel step waits for all its children and a failed step stops the chain.
 Chain placeholders: {task} is the original request; {previous} is the prior step's output (a parallel step's outputs in order) and the default when task is omitted; {outputs.name} is the output of an earlier step with as:'name'.
 agent, chain and tasks exclude each other and action.
 To override a model call {action:"models"} and copy the exact provider/id; thinking is a model suffix like :high${on("watchdog", ", not watchdog-only thinking")}.
 worktree:true needs a clean tree; baseRef is HEAD or a named ref, never a commit id.
-Before using structured output, acceptance, ${on("tool-budgets", "tool budgets, ")}fast, fork context or skills/tools, read {action:"guide",topic:"tool-reference"}.`;
+Before using structured output, acceptance, ${on("tool-budgets", "tool budgets, ")}fast, fork context or skills/tools, read {action:"guide",topic:"tool-reference/bound-execution-and-output"}.`;
 
 const defaultDescription = (on: FeatureText) => `${on("workflow-scripts", scriptExecutionGuidance(on), structuredExecutionGuidance(on))}\n\n${safetyGuidance(on)}`;
 
@@ -54,8 +54,8 @@ const fullDescription = (on: FeatureText) => `${defaultDescription(on)}
 
 WORKFLOW DETAILS:
 ${on("workflow-scripts", "• runs.lanes([{key,stages:[{key,agent,task},{key,resume:'previous',task}]}]) runs first stages together, later stages sequentially per lane. Failures stay lane-local; only explicit structuredOutput.verdict === 'blocked' blocks a successful stage, never reviewer prose.\n")}• ${on("workflow-scripts", "Workflow child controls default onto runs.run/runs.all items; child fields override them.", "Top-level child controls apply to every chain/tasks child.")} worktree:true isolates each child and returns handoff artifacts.${on("usage-budgets", " usageBudget is shared across the workflow; already-running children are not stopped.")}
-• Missions auto-attach${on("missions", " unless mission:false")}; ${on("workflow-scripts", "await state.get(key)/state.set(key,JSONValue) requires a mission. ")}See guide topic missions. Omit acceptance for reviewer/read-only calls; acceptance.review.required requests independent writer review.
-• Management discovery: ${managementDiscovery(on)}. Use guide topics agents, ${on("missions", "missions, ")}observability, tool-reference, configuration, models${on("watchdog", ", watchdog")} or extension-api for exact action fields.${on("schedules", on("workflow-scripts", " Schedules take script inputs, not direct children; recipes live in the missions guide."))}`;
+• Missions auto-attach${on("missions", " unless mission:false")}; ${on("workflow-scripts", "await state.get(key)/state.set(key,JSONValue) requires a mission. ")}See guide topic missions/launch-with-a-mission. Omit acceptance for reviewer/read-only calls; acceptance.review.required requests independent writer review.
+• Management discovery: ${managementDiscovery(on)}. Use guide topics agents/choose-an-agent, ${on("missions", "missions/launch-with-a-mission, ")}observability/inspect-the-fleet-or-one-transcript, tool-reference, configuration, models${on("watchdog", ", watchdog")} or extension-api for exact action fields.${on("schedules", on("workflow-scripts", " Schedules take script inputs, not direct children; recipes live in the missions guide."))}`;
 
 const allEnabled = featureText(resolveDisabledFeatureSurface({}));
 

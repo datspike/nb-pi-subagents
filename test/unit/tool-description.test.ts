@@ -121,7 +121,7 @@ describe("registered subagent tool description", () => {
 				/lane infrastructure blocker.*exact error, run id and repo\/cwd\/branch.*partial diff.*retry the same way/,
 				/Never switch to interactive_shell, pi -ne, another CLI or foreground mode on your own/,
 				/Ordinary children are not orchestrators/,
-				/guide",topic:"workflows"/,
+				/guide",topic:"workflows\/start-a-workflow-script"/,
 			]) assert.match(description, contract);
 		}
 	});
