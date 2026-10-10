@@ -475,7 +475,7 @@ interface ExecutorDeps {
 	tempArtifactsDir: string;
 	getSubagentSessionRoot: (parentSessionFile: string | null) => string;
 	expandTilde: (p: string) => string;
-\tdiscoverAgents: (cwd: string, scope: AgentScope, preferredModelProvider?: string, options?: { projectTrusted?: boolean }) => { agents: AgentConfig[]; disabledAgents?: string[]; agentDiagnostics?: AgentDiscoveryDiagnostic[]; modelScope?: ModelScopeConfig; maxThinking?: AgentConfig["maxThinking"]; cwd?: string; scope?: AgentScope; directories?: UnknownAgentDiagnosticContext["directories"] };
+	discoverAgents: (cwd: string, scope: AgentScope, preferredModelProvider?: string, options?: { projectTrusted?: boolean }) => { agents: AgentConfig[]; disabledAgents?: string[]; agentDiagnostics?: AgentDiscoveryDiagnostic[]; modelScope?: ModelScopeConfig; maxThinking?: AgentConfig["maxThinking"]; cwd?: string; scope?: AgentScope; directories?: UnknownAgentDiagnosticContext["directories"] };
 	discoverAgentsAll?: typeof discoverAgentsAll;
 	onAgentsChanged?: () => void;
 	allowMutatingManagementActions?: boolean;

@@ -887,7 +887,9 @@ if (!fs.existsSync(${JSON.stringify(holdPath)})) { console.log('{}'); } else {
 					assert.equal(launched.details.results[0]?.detached, true, launched.content[0]?.text);
 					runId = launched.details.runId;
 				} else {
-					const started = await first.tool.execute("workflow-before-replace", { workflow: "parallel", args: { tasks: [{ agent: "asker", task: "Ask, then finish" }] }, async: true }, new AbortController().signal, undefined, ctx);
+					const workflowPath = path.join(tempDir, "replace-workflow.js");
+					fs.writeFileSync(workflowPath, "return runs.run('asker', { agent: 'asker', task: 'Ask, then finish' });\n");
+					const started = await first.tool.execute("workflow-before-replace", { workflow: workflowPath, async: true }, new AbortController().signal, undefined, ctx);
 					assert.ok(started.details.asyncDir, started.content[0]?.text);
 					const deadline = Date.now() + 10_000;
 					while ((!detachAccepted || !runId) && Date.now() < deadline) {

@@ -19,7 +19,6 @@ import { KNOWN_FIELDS } from "./agent-serializer.ts";
 import { parseChain, parseJsonChain } from "./chain-serializer.ts";
 import { mergeAgentsForScope } from "./agent-selection.ts";
 import { projectScopeRequiresTrustMessage } from "./agent-scope.ts";
-import { closestMatch } from "../shared/edit-distance.ts";
 import { parseFrontmatter, parseFrontmatterList } from "./frontmatter.ts";
 import { buildRuntimeName, parsePackageName } from "./identity.ts";
 import { parseModelScopeConfig, type ModelScopeConfig } from "../runs/shared/model-scope.ts";
@@ -2917,14 +2916,14 @@ function discoveryDiagnostics(sources: AgentDiscoverySources, scope: AgentScope,
 }
 
 function buildEffectiveDiscovery(sources: AgentDiscoverySources, scope: AgentScope, projectTrusted = true): AgentDiscoveryResult {
-\tconst configured = configuredAgentsForScope(sources, scope, scope, projectTrusted);
-\tconst merged = mergeAgentsForScope(scope, configured.user, configured.project, configured.builtin, configured.package);
-\tconst agents = applySubagentMaxThinking(merged.filter((agent) => agent.disabled !== true), configured.maxThinking);
-\tconst disabledAgents = merged.filter((agent) => agent.disabled === true).map((agent) => agent.name);
-\treturn {
-\t\tagents,
-\t\t...(disabledAgents.length ? { disabledAgents } : {}),
-\t\tagentDiagnostics: discoveryDiagnostics(sources, scope, projectTrusted),
+	const configured = configuredAgentsForScope(sources, scope, scope, projectTrusted);
+	const merged = mergeAgentsForScope(scope, configured.user, configured.project, configured.builtin, configured.package);
+	const agents = applySubagentMaxThinking(merged.filter((agent) => agent.disabled !== true), configured.maxThinking);
+	const disabledAgents = merged.filter((agent) => agent.disabled === true).map((agent) => agent.name);
+	return {
+		agents,
+		...(disabledAgents.length ? { disabledAgents } : {}),
+		agentDiagnostics: discoveryDiagnostics(sources, scope, projectTrusted),
 		projectAgentsDir: sources.projectAgentsDir,
 		cwd: sources.cwd,
 		scope,
