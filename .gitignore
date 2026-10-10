@@ -19,3 +19,10 @@ tmp/
 /perf-*.md
 /pr-*-gate*.json
 /pr-*-review*.md
+
+# Private planning, runtime artifacts, and workstation-specific guidance.
+/.task_files/
+/.runtime/
+/.pi/
+/AGENTS.local.md
+/.worktreeinclude
