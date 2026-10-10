@@ -235,7 +235,17 @@ export function capFinalInlineOutput(
 	if (Buffer.byteLength(`${capped}${suffix}`, "utf-8") <= maxBytes) return `${capped}${suffix}`;
 	const metadata = capped.split("\n").filter((line) => /(?:Output saved to:|Full output:|Retention artifact:)/.test(line)).join("\n");
 	const metadataText = metadata ? `\n${truncateUtf8Head(metadata, Math.min(2048, Math.floor(maxBytes / 3)))}` : "";
-	const suffixText = suffix ? truncateUtf8Head(suffix, Math.min(4096, Math.floor(maxBytes / 3))) : "";
+	const suffixBudget = Math.min(4096, Math.floor(maxBytes / 3));
+	const suffixLines = suffix.split(/\r?\n/).filter(Boolean);
+	const pointerLines = suffixLines.filter((line) => /^(?:Worktree handoff:|Full patches:|Worktree finalization retained)/.test(line));
+	const previewLines = suffixLines.filter((line) => !pointerLines.includes(line));
+	const pointerText = pointerLines.join("\n");
+	const previewText = previewLines.join("\n");
+	const pointerBudget = pointerText ? Math.min(Buffer.byteLength(pointerText, "utf-8"), Math.floor(suffixBudget * 0.7)) : 0;
+	const boundedPointers = truncateUtf8Head(pointerText, pointerBudget);
+	const previewBudget = Math.max(0, suffixBudget - Buffer.byteLength(boundedPointers, "utf-8") - (boundedPointers && previewText ? 1 : 0));
+	const boundedPreview = truncateUtf8Head(previewText, previewBudget);
+	const suffixText = [boundedPreview, boundedPointers].filter(Boolean).length > 0 ? `\n${[boundedPreview, boundedPointers].filter(Boolean).join("\n")}` : "";
 	const reservedBytes = Buffer.byteLength(`${metadataText}${suffixText}`, "utf-8");
 	if (reservedBytes >= maxBytes) return truncateUtf8Head(`${metadataText}${suffixText}`, maxBytes);
 	return `${truncateUtf8Head(output, maxBytes - reservedBytes)}${metadataText}${suffixText}`;

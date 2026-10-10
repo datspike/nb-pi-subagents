@@ -381,4 +381,11 @@ describe("finalizeSingleOutput", () => {
 	it("does not emit a truncation marker when no bytes are available", () => {
 		assert.equal(truncateUtf8Head("hello", 0), "");
 	});
+
+	it("keeps worktree retrieval pointers when truncating a large suffix", () => {
+		const result = capFinalInlineOutput("body", {}, `\n\n${"diff ".repeat(10_000)}\nWorktree handoff: /tmp/handoff.json\nFull patches: /tmp/patches`, 8192);
+		assert.ok(Buffer.byteLength(result, "utf-8") <= 8192);
+		assert.match(result, /Worktree handoff: \/tmp\/handoff\.json/);
+		assert.match(result, /Full patches: \/tmp\/patches/);
+	});
 });
