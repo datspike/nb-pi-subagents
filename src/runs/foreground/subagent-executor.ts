@@ -4529,7 +4529,7 @@ async function runSinglePath(data: ExecutionContextData, deps: ExecutorDeps): Pr
 
 	if (r.interrupted) {
 		return {
-			content: [{ type: "text", text: `Run paused after interrupt (${params.agent}). Waiting for explicit next action.${worktreeSuffix}` }],
+			content: [{ type: "text", text: capFinalInlineOutput(`Run paused after interrupt (${params.agent}). Waiting for explicit next action.`, {}, worktreeSuffix) }],
 			details,
 		};
 	}

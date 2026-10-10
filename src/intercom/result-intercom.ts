@@ -16,7 +16,7 @@ import {
 	SUBAGENT_RESULT_INTERCOM_DELIVERY_EVENT,
 	SUBAGENT_RESULT_INTERCOM_EVENT,
 } from "../shared/types.ts";
-import { truncateUtf8Head } from "../runs/shared/single-output.ts";
+import { boundStatusResponse } from "../runs/shared/status-output.ts";
 
 export function resolveSubagentResultStatus(input: {
 	exitCode?: number;
@@ -286,7 +286,7 @@ function formatSubagentResultIntercomMessage(input: {
 		lines.push(child.summary);
 	}
 
-	return truncateUtf8Head(lines.join("\n"), 16 * 1024);
+	return boundStatusResponse(lines.join("\n"));
 }
 
 export function buildSubagentResultIntercomPayload(input: GroupedResultIntercomMessageInput): SubagentResultIntercomPayload {

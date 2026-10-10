@@ -265,4 +265,25 @@ describe("result intercom formatter", () => {
 		assert.equal(resolveSubagentResultStatus({ success: true }), "completed");
 		assert.equal(resolveSubagentResultStatus({ exitCode: 1 }), "failed");
 	});
+
+	it("keeps late child retrieval metadata in an oversized grouped message", () => {
+		const payload = buildSubagentResultIntercomPayload({
+			to: "parent",
+			runId: "large-run",
+			mode: "parallel",
+			source: "foreground",
+			children: Array.from({ length: 40 }, (_, index) => ({
+				agent: `worker-${index}`,
+				status: "failed" as const,
+				summary: "я".repeat(900),
+				artifactPath: `/retained/output-${index}.md`,
+				sessionPath: `/sessions/child-${index}.jsonl`,
+			})),
+		});
+
+		assert.ok(Buffer.byteLength(payload.message, "utf-8") <= 16 * 1024);
+		assert.match(payload.message, /worker-39/);
+		assert.match(payload.message, /retained\/output-39\.md/);
+		assert.match(payload.message, /sessions\/child-39\.jsonl/);
+	});
 });
