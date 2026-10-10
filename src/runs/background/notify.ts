@@ -206,7 +206,7 @@ function outputPathFromReference(value: CompletionChild["outputReference"]): str
 }
 
 function childSavedOutputPath(child: CompletionChild): string | undefined {
-	return outputPathFromReference(child.outputReference);
+	return nonemptyPath(child.savedOutputPath) ?? outputPathFromReference(child.outputReference);
 }
 
 function nonemptyPath(value: unknown): string | undefined {

@@ -1666,7 +1666,7 @@ async function runSyncCompletionInner(
 	const agent = agents.find((a) => a.name === agentName);
 	if (!agent) {
 		const diagnosticContext = options.unknownAgentDiagnosticContext
-			?? unknownAgentDiagnosticContext(discoverAgents(path.resolve(options.cwd ?? runtimeCwd), "both"));
+			?? unknownAgentDiagnosticContext(discoverAgents(path.resolve(options.cwd ?? runtimeCwd), "both", undefined, { projectTrusted: options.projectTrusted }));
 		return redactResultPrompt(withRunContext({
 			index: options.index ?? 0,
 			agent: agentName,

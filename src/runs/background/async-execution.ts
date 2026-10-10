@@ -972,7 +972,7 @@ export function buildAsyncRunnerSteps(id: string, params: AsyncRunnerStepBuildPa
 		throw error;
 	}
 	const diagnosticContext = params.unknownAgentDiagnosticContext
-		?? unknownAgentDiagnosticContext(discoverAgents(path.resolve(runnerCwd), "both"));
+		?? unknownAgentDiagnosticContext(discoverAgents(path.resolve(runnerCwd), "both", undefined, { projectTrusted: ctx.projectTrusted }));
 	for (const s of chain) {
 		const stepAgents = isParallelStep(s)
 			? s.parallel.map((t) => t.agent)

@@ -108,6 +108,7 @@ export interface RefinementActionContext {
 	state: SubagentState;
 	signal: AbortSignal;
 	launchProposalChild: LaunchRefinementProposalChild;
+	projectTrusted?: boolean;
 }
 
 function result(text: string, isError = false): AgentToolResult<Details> {
@@ -535,8 +536,8 @@ function guidanceFromProposal(proposal: RefinementProposal): string {
 	return proposal.edits.map((edit) => `- ${edit.guidance.trim()}`).join("\n");
 }
 
-function resolveOneAgent(cwd: string, agentName: string): { ok: true; agent: AgentConfig } | { ok: false; error: string } {
-	const discovered = discoverAgents(cwd, "both");
+function resolveOneAgent(cwd: string, agentName: string, projectTrusted?: boolean): { ok: true; agent: AgentConfig } | { ok: false; error: string } {
+	const discovered = discoverAgents(cwd, "both", undefined, { projectTrusted });
 	const resolved = resolveAgentName(agentName, discovered.agents);
 	if (resolved.error) return { ok: false, error: resolved.error };
 	if (!resolved.agent) return { ok: false, error: formatUnknownAgentError(agentName, unknownAgentDiagnosticContext(discovered)) };
@@ -547,7 +548,7 @@ export async function handleRefinementAction(action: RefinementAction, params: {
 	const requestedAgent = params.agent?.trim();
 	if (!requestedAgent) return result(`${action} requires agent. Use /subagents-refine <agent> or subagent({ action: "${action}", agent: "<agent>" }).`, true);
 	let resolved: { ok: true; agent: AgentConfig } | { ok: false; error: string };
-	try { resolved = resolveOneAgent(ctx.cwd, requestedAgent); } catch (error) { return result(error instanceof Error ? error.message : String(error), true); }
+	try { resolved = resolveOneAgent(ctx.cwd, requestedAgent, ctx.projectTrusted); } catch (error) { return result(error instanceof Error ? error.message : String(error), true); }
 	if (!resolved.ok) return result(resolved.error, true);
 	const agent = resolved.agent;
 	let existing: ExistingRefinementFile;

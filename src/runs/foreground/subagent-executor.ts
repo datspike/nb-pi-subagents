@@ -6880,6 +6880,7 @@ export function createSubagentExecutor(deps: ExecutorDeps): {
 				return handleRefinementAction(action, paramsWithResolvedCwd, {
 					cwd: requestCwd,
 					state: deps.state,
+					projectTrusted: typeof ctx.isProjectTrusted === "function" ? ctx.isProjectTrusted() : undefined,
 					signal,
 					launchProposalChild: (task, outputSchema, proposalSignal) => execute(randomUUID(), {
 						agent: "reviewer",

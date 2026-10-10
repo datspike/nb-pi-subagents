@@ -229,13 +229,14 @@ function modelWarning(ctx: ManagementContext, model: string | undefined): string
 	return `Warning: model '${model}' is not in the current model registry. Run subagent({ action: "models" }) to list valid provider/id selectors, then use the exact provider/id form (bare ids resolve only when unique).`;
 }
 
-function skillsWarning(cwd: string, agent: Pick<AgentConfig, "skills" | "skillPath" | "filePath">): string | undefined {
+function skillsWarning(cwd: string, agent: Pick<AgentConfig, "skills" | "skillPath" | "filePath">, projectTrusted?: boolean): string | undefined {
 	if (!agent.skills?.length) return undefined;
 	const { missing } = resolveSkills(
 		agent.skills,
 		cwd,
 		agent.skillPath,
 		agent.filePath ? path.dirname(agent.filePath) : cwd,
+		projectTrusted,
 	);
 	return missing.length ? `Warning: skills not found: ${missing.join(", ")}.` : undefined;
 }
@@ -1185,7 +1186,7 @@ export function handleCreate(params: ManagementParams, ctx: ManagementContext): 
 	if (profileError) return result(profileError, true);
 	const mw = modelWarning(ctx, agent.model);
 	if (mw) warnings.push(mw);
-	const sw = skillsWarning(ctx.cwd, agent);
+	const sw = skillsWarning(ctx.cwd, agent, ctx.projectTrusted);
 	if (sw) warnings.push(sw);
 	fs.writeFileSync(targetPath, serializeAgent(agent), "utf-8");
 	ctx.onAgentsChanged?.();
@@ -1241,7 +1242,7 @@ export function handleUpdate(params: ManagementParams, ctx: ManagementContext): 
 		if (mw) warnings.push(mw);
 	}
 	if (hasKey(cfg, "skills") || hasKey(cfg, "skillPath")) {
-		const sw = skillsWarning(ctx.cwd, updated);
+		const sw = skillsWarning(ctx.cwd, updated, ctx.projectTrusted);
 		if (sw) warnings.push(sw);
 	}
 	if (updated.name !== oldName) {
