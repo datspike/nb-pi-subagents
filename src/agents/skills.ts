@@ -602,8 +602,9 @@ function getCachedSkills(cwd: string, projectTrusted = true): CachedSkillEntry[]
 export function resolveSkillPath(
 	skillName: string,
 	cwd: string,
-): { path: string; source: SkillSource } | undefined {
-	const skills = getCachedSkills(cwd);
+	projectTrusted = true,
+ ): { path: string; source: SkillSource } | undefined {
+	const skills = getCachedSkills(cwd, projectTrusted);
 	const skill = skills.find((s) => s.name === skillName);
 	if (!skill) return undefined;
 	return { path: skill.filePath, source: skill.source };
@@ -652,7 +653,8 @@ export function resolveSkills(
 	cwd: string,
 	localSkillPaths?: string[],
 	localBaseDir?: string,
-): { resolved: ResolvedSkill[]; missing: string[] } {
+	projectTrusted = true,
+ ): { resolved: ResolvedSkill[]; missing: string[] } {
 	const resolved: ResolvedSkill[] = [];
 	const missing: string[] = [];
 	const localByName = new Map<string, CachedSkillEntry>();
@@ -678,7 +680,7 @@ export function resolveSkills(
 		const local = localByName.get(trimmed);
 		let skill = local ? readSkill(trimmed, local.filePath, local.source) : undefined;
 		if (!skill) {
-			const location = resolveSkillPath(trimmed, cwd);
+			const location = resolveSkillPath(trimmed, cwd, projectTrusted);
 			if (location) skill = readSkill(trimmed, location.path, location.source);
 		}
 		if (skill) resolved.push(skill);
@@ -694,12 +696,13 @@ export function resolveSkillsWithFallback(
 	fallbackCwd?: string,
 	localSkillPaths?: string[],
 	localBaseDir?: string,
-): { resolved: ResolvedSkill[]; missing: string[] } {
-	const primary = resolveSkills(skillNames, primaryCwd, localSkillPaths, localBaseDir);
+	projectTrusted = true,
+ ): { resolved: ResolvedSkill[]; missing: string[] } {
+	const primary = resolveSkills(skillNames, primaryCwd, localSkillPaths, localBaseDir, projectTrusted);
 	if (!fallbackCwd || primary.missing.length === 0) return primary;
 	if (path.resolve(primaryCwd) === path.resolve(fallbackCwd)) return primary;
 
-	const fallback = resolveSkills(primary.missing, fallbackCwd);
+	const fallback = resolveSkills(primary.missing, fallbackCwd, undefined, undefined, projectTrusted);
 	return {
 		resolved: [...primary.resolved, ...fallback.resolved],
 		missing: fallback.missing,

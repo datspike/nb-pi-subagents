@@ -415,14 +415,15 @@ export function formatIncrementalChildCompletion(child: IncrementalChildCompleti
 			: child.outcome === "paused" ? "paused (needs attention)"
 				: "stopped";
 	const workflowStatus = child.workflowRunning ? "workflow still running" : "workflow finished";
-	return [
+	const lines = [
 		`Workflow child ${statusText}: **${child.childKey}**`,
 		`Workflow run: ${child.workflowRunId}`,
 		...(child.childRunId ? [`Child run: ${child.childRunId}`] : []),
 		...(child.outputReference ? [`Output: ${child.outputReference}`] : []),
-		...(child.error ? [`Error: ${child.error}`] : []),
+		...(child.error ? [`Error: ${truncateUtf8Head(child.error, 2_000).text}`] : []),
 		`Status: ${workflowStatus}`,
-	].join("\n");
+	];
+	return truncateUtf8Head(lines.join("\n"), 8 * 1024).text;
 }
 
 export function parseSubagentNotifyContent(content: string): SubagentNotifyDetails | undefined {

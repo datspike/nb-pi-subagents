@@ -35,8 +35,16 @@ import { formatWorkflowChecklistText, projectWorkflowChecklist } from "../../wor
 import { validHostStepNodes } from "../shared/host-step-status.ts";
 import { workflowAsyncChildSteeringGuidance } from "../shared/workflow-async-child-guidance.ts";
 import { formatWorkflowKeyRevival, projectWorkflowKeyRevival } from "../../workflows/workflow-revival.ts";
-import { capSummaryOutputs } from "../shared/single-output.ts";
+import { capSummaryOutputs, truncateUtf8Head } from "../shared/single-output.ts";
 
+const MAX_STATUS_RESPONSE_BYTES = 16 * 1024;
+function boundStatusResponse(lines: string[]): string {
+	const text = lines.join("\n");
+	if (Buffer.byteLength(text, "utf-8") <= MAX_STATUS_RESPONSE_BYTES) return text;
+	const evidence = lines.filter((line) => /^(Run:|Status:|Output:|Result:|Workflow receipt:|Session:|Dir:|Log:|Events:|  Child run:)/.test(line)).slice(-24);
+	const tail = evidence.length ? `\n\nStatus output truncated. Retrieval metadata:\n${evidence.join("\n")}` : "\n\nStatus output truncated.";
+	return truncateUtf8Head(text, Math.max(1, MAX_STATUS_RESPONSE_BYTES - Buffer.byteLength(tail, "utf-8"))) + tail;
+}
 /** A step whose structured output has a path line needs only a short inline preview. */
 const STRUCTURED_PREVIEW_WITH_PATH_CHARS = 500;
 
@@ -723,7 +731,7 @@ export function inspectSubagentStatus(params: RunStatusParams, deps: RunStatusDe
 			if (fs.existsSync(logPath)) lines.push(`Log: ${logPath}`);
 			if (fs.existsSync(eventsPath)) lines.push(`Events: ${eventsPath}`);
 
-			return { content: [{ type: "text", text: lines.join("\n") }], details: { mode: "single", results: [], ...(status.workflowReceiptPath ? { workflowReceiptPath: status.workflowReceiptPath } : {}), ...(status.preflight ? { preflight: status.preflight } : {}), ...(status.workflow?.preflightWarnings?.length ? { preflightWarnings: status.workflow.preflightWarnings } : {}), ...(workflowChildren ? { workflowChildren } : {}), ...(workflowTerminalProof ? { workflowTerminalProof } : {}), ...(runFanoutBudget ? { runFanoutBudget } : {}), ...(processTerminal ? { lifecycleStatus: { processTerminal } } : {}) } };
+			return { content: [{ type: "text", text: boundStatusResponse(lines) }], details: { mode: "single", results: [], ...(status.workflowReceiptPath ? { workflowReceiptPath: status.workflowReceiptPath } : {}), ...(status.preflight ? { preflight: status.preflight } : {}), ...(status.workflow?.preflightWarnings?.length ? { preflightWarnings: status.workflow.preflightWarnings } : {}), ...(workflowChildren ? { workflowChildren } : {}), ...(workflowTerminalProof ? { workflowTerminalProof } : {}), ...(runFanoutBudget ? { runFanoutBudget } : {}), ...(processTerminal ? { lifecycleStatus: { processTerminal } } : {}) } };
 		}
 	}
 
@@ -784,7 +792,7 @@ export function inspectSubagentStatus(params: RunStatusParams, deps: RunStatusDe
 			if (data.summary) lines.push("", capSummaryOutputs(data.summary, data.results));
 			const workflowChildren = parseWorkflowChildSummary((data as unknown as Record<string, unknown>).workflowChildren);
 			if (workflowChildren && workflowChildren.workflowRunId !== runId) throw new Error("workflowChildren.workflowRunId does not match the result run id.");
-			return { content: [{ type: "text", text: lines.join("\n") }], details: { mode: "single", results: [], ...(workflowReceiptPath ? { workflowReceiptPath } : {}), ...(workflowChildren ? { workflowChildren } : {}) } };
+			return { content: [{ type: "text", text: boundStatusResponse(lines) }], details: { mode: "single", results: [], ...(workflowReceiptPath ? { workflowReceiptPath } : {}), ...(workflowChildren ? { workflowChildren } : {}) } };
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
 			return {

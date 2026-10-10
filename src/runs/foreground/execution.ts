@@ -1770,6 +1770,7 @@ async function runSyncCompletionInner(
 		runtimeCwd,
 		agent.skillPath,
 		agent.filePath ? path.dirname(agent.filePath) : skillCwd,
+		options.projectTrusted,
 	);
 	if (skillNames.some((skill) => skill.trim() === "pi-subagents") && missingSkills.includes("pi-subagents")) {
 		return redactResultPrompt(withRunContext({

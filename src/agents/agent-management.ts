@@ -984,7 +984,7 @@ export function handleList(params: ManagementParams, ctx: ManagementContext): Ag
 	const proactiveSuggestions = buildProactiveSkillSubagentRecommendationLines({
 		agents,
 		...(ctx.config?.proactiveSkillSubagents !== undefined ? { config: ctx.config.proactiveSkillSubagents } : {}),
-		discoverAvailableSkills: () => discoverAvailableSkills(ctx.cwd),
+		discoverAvailableSkills: () => discoverAvailableSkills(ctx.cwd, { projectTrusted: ctx.projectTrusted }),
 	});
 	const providerStatus = registeredExternalJobProviderStatus();
 	const providerNameSet = providerNames(providerStatus);

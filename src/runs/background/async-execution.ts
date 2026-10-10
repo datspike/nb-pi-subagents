@@ -1075,6 +1075,7 @@ export function buildAsyncRunnerSteps(id: string, params: AsyncRunnerStepBuildPa
 			ctx.cwd,
 			a.skillPath,
 			a.filePath ? path.dirname(a.filePath) : stepCwd,
+			ctx.projectTrusted,
 		);
 		if (missingSkills.includes("pi-subagents")) throw new UnavailableSubagentSkillError(UNAVAILABLE_SUBAGENT_SKILL_ERROR);
 
@@ -1855,6 +1856,7 @@ export function executeAsyncSingle(
 		ctx.cwd,
 		agentConfig.skillPath,
 		agentConfig.filePath ? path.dirname(agentConfig.filePath) : runnerCwd,
+		ctx.projectTrusted,
 	);
 	if (missingSkills.includes("pi-subagents")) return formatAsyncStartError("single", UNAVAILABLE_SUBAGENT_SKILL_ERROR);
 

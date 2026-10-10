@@ -3457,7 +3457,7 @@ function importWorkflowAwaitedChildResult(
 		...(completed.transcriptError ? { transcriptError: completed.transcriptError } : {}),
 	});
 	return {
-		content: [{ type: "text", text: (completed.success ? completed.output || completed.error : completed.error || completed.output) || (options.emptyOutputText ?? `Async workflow child ${options.runId} completed without output.`) }],
+		content: [{ type: "text", text: capFinalInlineOutput((completed.success ? completed.output || completed.error : completed.error || completed.output) || (options.emptyOutputText ?? `Async workflow child ${options.runId} completed without output.`), { artifactPath: completed.artifactPaths?.outputPath, savedPath: completed.savedOutputPath }) }],
 		...(completed.success ? {} : { isError: true }),
 		details: {
 			...options.details,
