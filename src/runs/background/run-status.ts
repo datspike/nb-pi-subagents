@@ -5,7 +5,7 @@ import { safeTerminalText } from "../../shared/display-text.ts";
 import { getArtifactPaths, getArtifactsDir } from "../../shared/artifacts.ts";
 import { readFleetTranscript } from "../../tui/fleet-transcript.ts";
 import { formatAsyncRunList, formatAsyncRunOutputPath, formatAsyncRunProgressLabel, formatWorkflowStageLine, listAsyncRuns } from "./async-status.ts";
-import { formatAsyncResultTranscript, formatAsyncRunTranscript, formatNestedRunTranscript, inspectSubagentFleet } from "./fleet-view.ts";
+import { appendTranscriptBody, formatAsyncResultTranscript, formatAsyncRunTranscript, formatNestedRunTranscript, inspectSubagentFleet } from "./fleet-view.ts";
 import { formatNestedRunStatusLines } from "../shared/nested-render.ts";
 import { formatModelThinking } from "../../shared/formatters.ts";
 import { formatActivityLabel } from "../../shared/status-format.ts";
@@ -319,9 +319,8 @@ function formatRememberedForegroundTranscript(run: ForegroundResumeRun, options:
 		child.savedOutputPath && child.savedOutputPath !== child.artifactPaths?.outputPath ? `Saved output: ${child.savedOutputPath}` : undefined,
 		child.outputSaveError ? `Output warning: ${child.outputSaveError}` : undefined,
 	].filter((line): line is string => Boolean(line));
-	lines.push("Result transcript tail:");
-	if (outputLines.length === 0) lines.push("  (no recovered final output available yet)");
-	else for (const line of outputLines) lines.push(`  ${line}`);
+	if (outputLines.length === 0) lines.push("Result transcript tail:", "  (no recovered final output available yet)");
+	else appendTranscriptBody(lines, "Result transcript tail", outputLines, false);
 	return lines.map((line) => safeTerminalText(line)).join("\n");
 }
 

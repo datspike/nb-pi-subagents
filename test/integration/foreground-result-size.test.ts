@@ -50,6 +50,7 @@ function makeState(cwd: string) {
 		baseCwd: cwd,
 		currentSessionId: null,
 		asyncJobs: new Map(),
+		foregroundRuns: new Map(),
 		cleanupTimers: new Map(),
 		lastUiContext: null,
 		poller: null,
@@ -63,14 +64,14 @@ function makeState(cwd: string) {
 	};
 }
 
-function makeExecutor(cwd: string) {
+function makeExecutor(cwd: string, state = makeState(cwd)) {
 	return createSubagentExecutor!({
 		pi: {
 			events: { emit: () => {} },
 			getSessionName: () => undefined,
 			setSessionName: () => {},
 		},
-		state: makeState(cwd),
+		state,
 		config: {},
 		asyncByDefault: false,
 		tempArtifactsDir: cwd,
@@ -258,6 +259,26 @@ describe("foreground result payload compaction", { skip: !available ? "subagent 
 		assert.match(text, /^Transcript target:/);
 		assert.match(text, /Status file not found|does not match|Unable to resolve|No run found/);
 		assert.doesNotMatch(text, /\uFFFD/u);
+	});
+	for (const source of ["memory", "artifact"]) for (const value of ["x", "世界😀"]) for (const many of [false, true]) it(`bounds remembered foreground transcript (${source}, multibyte=${value !== "x"}, many=${many})`, async () => {
+		const output = many
+			? Array.from({ length: 100 }, (_, i) => `entry-${i}: ${value.repeat(300)}`).concat("huge: " + value.repeat(100000), "latest context").join("\n")
+			: "single: " + value.repeat(100000);
+		const file = path.join(tempDir, "remembered-output.md");
+		if (source === "artifact") fs.writeFileSync(file, output);
+		const state = makeState(tempDir);
+		state.foregroundRuns.set("remembered-budget", { runId: "remembered-budget", mode: "single", cwd: tempDir, sessionId: "session-123", updatedAt: Date.now(), children: [{ agent: "tester", index: 0, status: "completed", finalOutput: source === "memory" ? output : "stale cached output", ...(source === "artifact" ? { artifactPaths: { outputPath: file } } : {}) }] });
+		const result = await makeExecutor(tempDir, state).execute("remembered-transcript-budget", { action: "status", id: "remembered-budget", view: "transcript", lines: 500 }, new AbortController().signal, undefined, makeCtx(tempDir));
+		assert.equal(result.isError, undefined);
+		const text = result.content[0]?.text ?? "";
+		const body = text.split("Result transcript tail:\n")[1];
+		assert.ok(body);
+		assert.ok(Buffer.byteLength(body) <= 32768, `${Buffer.byteLength(body)} bytes`);
+		assert.ok(body.split("\n").every((line) => line.length <= 2002));
+		assert.match(body, /content omitted/);
+		assert.doesNotMatch(body, /[\uD800-\uDFFF]|\uFFFD/u);
+		if (many) { assert.ok(Buffer.byteLength(body) > 16384); assert.ok(body.endsWith("latest context")); assert.match(body, /earlier lines omitted/); }
+		if (source === "artifact") { assert.ok(text.includes(file)); assert.equal(fs.readFileSync(file, "utf8"), output); assert.doesNotMatch(body, /stale cached output/); }
 	});
 	it("preserves the successful 32 KiB transcript body through the executor", async () => {
 		fs.mkdirSync(DIRS.async, { recursive: true });

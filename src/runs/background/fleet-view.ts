@@ -521,7 +521,8 @@ function safeTranscriptLines(lines: string[]): string {
 	return lines.map((line) => safeTerminalText(line)).join("\n");
 }
 
-function appendTranscriptBody(lines: string[], sourceLabel: string, sourceLines: string[], truncated: boolean): void {
+/** Appends recent source lines and omission markers to the shared byte-bounded transcript body. */
+export function appendTranscriptBody(lines: string[], sourceLabel: string, sourceLines: string[], truncated: boolean): void {
 	lines.push(`${sourceLabel}${truncated ? " (tail truncated)" : ""}:`);
 	if (sourceLines.length === 0) {
 		lines.push("  (no transcript lines available yet)");
