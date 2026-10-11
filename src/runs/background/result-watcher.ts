@@ -1,3 +1,4 @@
+import { formatResultPersistenceDetails, verifiedResultOutputArtifact } from "../shared/result-persistence.ts";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { buildCompletionKey, markSeenWithTtl } from "./completion-dedupe.ts";
@@ -87,6 +88,8 @@ type ResultFileChild = {
 	artifactPaths?: { outputPath?: string };
 	outputSaveError?: string;
 	artifactOutputSaveFailed?: true;
+	metadataSaveError?: string;
+	savedOutputPath?: string;
 	intercomTarget?: string;
 	children?: unknown;
 };
@@ -507,7 +510,7 @@ export function createResultWatcher(
 					...(result.outputPartial === true ? { outputPartial: true } : {}),
 					summary,
 					index,
-					artifactPath: result.artifactPaths?.outputPath,
+					artifactPath: verifiedResultOutputArtifact(result),
 					...(typeof sessionPath === "string" && fsApi.existsSync(sessionPath) ? { sessionPath } : {}),
 					...(result.intercomTarget ? { intercomTarget: result.intercomTarget } : {}),
 					...(childNestedChildren ? { children: childNestedChildren } : {}),
@@ -543,6 +546,7 @@ export function createResultWatcher(
 					mode,
 					source: "async",
 					children: normalizedChildren,
+					resultMetadata: resultChildren.flatMap((child, index) => formatResultPersistenceDetails(child).map((error) => `Child ${index + 1} ${child.agent ?? data.agent ?? "unknown"}: ${error}`)),
 					asyncId: data.id ?? undefined,
 					asyncDir: data.asyncDir,
 					...(data.parallelHandoff ? { parallelHandoff: data.parallelHandoff } : {}),

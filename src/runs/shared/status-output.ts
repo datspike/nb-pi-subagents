@@ -13,7 +13,7 @@ export function boundStatusResponse(lines: string[] | string, verifiedMetadata?:
 	const evidenceLines = verifiedMetadata !== undefined
 		? verifiedMetadata
 		: (Array.isArray(lines) ? lines : text.split("\n"))
-			.filter((line) => /^\s*(\d+\. |Run:|State:|Status:|Result:|Result \[|Error:|Output:|Output artifact:|Output artifact \(retention-managed\):|Structured output:|Structured output \(retention-managed\):|Saved output:|Full output:|Output saved to:|Retention artifact:|Retention-managed async directory:|Workflow run:|Workflow receipt:|Workflow receipt \[|Session:|Transcript:|Dir:|Log:|Events:|Child run:|Run intercom target:|Previous intercom target:|Parallel handoff:|output:|session:|Active run)/.test(line))
+			.filter((line) => /^\s*(\d+\. |Run:|State:|Status:|Result:|Result \[|Error:|Output:|Output artifact:|Output artifact \(retention-managed\):|Structured output:|Structured output \(retention-managed\):|Saved output:|Full output:|Full response metadata:|Full completion metadata:|Output saved to:|Retention artifact:|Retention-managed async directory:|Workflow run:|Workflow receipt:|Workflow receipt \[|Session:|Transcript:|Dir:|Log:|Events:|Child run:|Run intercom target:|Previous intercom target:|Parallel handoff:|output:|session:|Active run)/.test(line))
 			.slice(-48)
 			.map((line) => truncateUtf8Head(line, 512));
 	const metadataLabel = verifiedMetadata !== undefined ? "Retrieval metadata" : "Unverified response excerpts (not retrieval metadata; file existence is unconfirmed)";

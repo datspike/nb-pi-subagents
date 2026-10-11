@@ -1,3 +1,5 @@
+import { safeTerminalText } from "../../shared/display-text.ts";
+import { formatResultPersistenceDetails, formatResultPersistenceErrors, singleLineResultMetadata, verifiedResultOutputArtifact } from "../shared/result-persistence.ts";
 import { randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -76,7 +78,7 @@ import { isAgentContract } from "../shared/agent-contract.ts";
 import { normalizeExtensionBindings, type ExtensionBindings } from "../shared/extension-bindings.ts";
 import { assertRequiredChildExtensionsAdmitted, hasMandatoryRequiredChildExtensions, readRetainedRequiredChildExtensions, resolveRequiredChildExtensions, type RequiredChildExtensionSnapshot } from "../../shared/required-child-extensions.ts";
 import { capFinalInlineOutput, capInlineOutput, finalizeSingleOutput, injectSingleOutputInstruction, normalizeSingleOutputOverride, outputPathMappingFromTask, resolveSingleOutputPath, truncateUtf8Head, validateFileOnlyOutputMode } from "../shared/single-output.ts";
-import { boundStatusResponse } from "../shared/status-output.ts";
+import { boundRetainedStatusResponse, boundStatusResponse } from "../shared/status-output.ts";
 import { assertJsonSchemaObject, cleanupStructuredOutputRuntime, createStructuredOutputRuntime } from "../shared/structured-output.ts";
 import { compactForegroundDetails, getSingleResultOutput, PROMPT_REDACTED, readStatus, resolveChildCwd, sumResultsCost, sumResultsUsage, toAgentToolUsage } from "../../shared/utils.ts";
 import { discardPreservedWorktrees, formatParallelHandoffError, formatParallelHandoffReference, protectRetainedWorktreeForResume, formatStoredParallelHandoffCleanup, parallelHandoffPath, readParallelHandoffManifest, recordParallelHandoffMerge, recordParallelHandoffSupersession, writeParallelHandoffGroup, writeWorktreeSetupHandoff } from "../shared/parallel-handoff.ts";
@@ -741,7 +743,7 @@ function withRunFanoutBudget(result: AgentToolResult<Details>, descriptor: RunFa
 		...result,
 		content: options.annotateContent === false
 			? result.content
-			: result.content.map((item, index) => index === 0 && item.type === "text" ? { ...item, text: `${formatRunFanoutBudget(runFanoutBudget)}\n${item.text}` } : item),
+			: result.content.map((item, index) => index === 0 && item.type === "text" ? { ...item, text: boundStatusResponse(`${formatRunFanoutBudget(runFanoutBudget)}\n${item.text}`) } : item),
 		details: { ...result.details, runFanoutBudget },
 	};
 }
@@ -2408,7 +2410,7 @@ function resultSummaryForIntercom(result: SingleResult): string {
 	const raw = result.exitCode !== 0 && error
 		? output ? `${error}\n\nOutput:\n${output}` : error
 		: output || error || "(no output)";
-	return truncateUtf8Head(raw, 4_000);
+	return truncateUtf8Head([...formatResultPersistenceErrors(result), raw].join("\n"), 4_000);
 }
 
 function formatFailedSingleRunOutput(result: SingleResult, displayOutput: string): string {
@@ -2499,7 +2501,7 @@ async function emitForegroundResultIntercom(input: {
 		...(result.outputPartial ? { outputPartial: true } : {}),
 		summary: resultSummaryForIntercom(result),
 		index,
-		artifactPath: result.artifactPaths?.outputPath,
+		artifactPath: verifiedResultOutputArtifact(result),
 		sessionPath: result.sessionFile,
 		intercomTarget: resolveSubagentIntercomTarget(input.runId, result.agent, index),
 	})]);
@@ -2510,6 +2512,7 @@ async function emitForegroundResultIntercom(input: {
 		mode: input.mode,
 		source: "foreground",
 		children: attachNestedChildrenToResultChildren(input.runId, children, input.nestedChildren),
+		resultMetadata: input.results.flatMap((result, index) => result.detached ? [] : formatResultPersistenceDetails(result).map((error) => `Child ${index + 1} ${result.agent}: ${error}`)),
 		...(typeof input.chainSteps === "number" ? { chainSteps: input.chainSteps } : {}),
 		...(input.parallelHandoff ? { parallelHandoff: input.parallelHandoff } : {}),
 	});
@@ -3779,8 +3782,20 @@ function appendWorkflowOutputWarning(text: string, warning: string | undefined):
 
 const WORKFLOW_TRACE_ERROR_MAX_CHARS = 500;
 
-// Return, emits, console, and trace errors (which carry child text) have no size limit of their
-// own, so only they are cut; other host sections stay whole. The saved full result is uncut.
+/** Builds a producer-owned workflow trail without parsing script return or console text. */
+function workflowResultMetadata(runId: string, state: string, children: readonly WorkflowScriptChildResult[], results: readonly SingleResult[]): string[] {
+	const lines = [`Run: ${runId}`, `State: ${state}`];
+	for (const child of children) lines.push(`Child run: ${child.key} ${child.runId ?? "unavailable"} ${child.state ?? (child.ok ? "completed" : "failed")}`);
+	for (const result of results) {
+		if (result.savedOutputPath) lines.push(`Saved output: ${result.savedOutputPath}`);
+		const artifact = verifiedResultOutputArtifact(result);
+		if (artifact) lines.push(`Output artifact: ${artifact}`);
+		for (const error of formatResultPersistenceErrors(result)) lines.push(`Child ${result.agent}: ${error}`);
+	}
+	return lines.map(singleLineResultMetadata);
+}
+
+/** Saves complete workflow output before bounding the final rendered response. */
 function formatWorkflowResultText(input: {
 	head: string[];
 	script: string[];
@@ -3790,11 +3805,12 @@ function formatWorkflowResultText(input: {
 	aggregateOutputPath: string | undefined;
 	fullResultPath: string;
 	producedChildOutputPaths: ReadonlySet<string>;
+	verifiedMetadata: string[];
 }): string {
 	const traceSection = (error: (text: string) => string) => input.trace.length > 0
 		? [`Call trace:\n${input.trace.map((entry) => `${entry.line}${entry.error ? ` — ${error(entry.error)}` : ""}`).join("\n")}`]
 		: [];
-	const fullText = [...input.head, ...input.script, ...traceSection((error) => error), ...input.tail].join("\n\n");
+	const fullText = [...input.head, ...input.script, ...traceSection((error) => error), ...input.tail, `Producer-owned result metadata:\n${input.verifiedMetadata.join("\n")}`].join("\n\n");
 	const outputWarning = writeWorkflowAggregateOutput(input.aggregateOutputPath, fullText, input.producedChildOutputPaths);
 	const scriptText = input.script.join("\n\n");
 	const config = { ...DEFAULT_MAX_OUTPUT, ...input.maxOutput };
@@ -3803,17 +3819,23 @@ function formatWorkflowResultText(input: {
 	let shownScriptText = scriptText;
 	let saveWarning: string | undefined;
 	let savedPath: string | undefined;
-	if (scriptCut || traceCut) {
+	const aggregateCut = Buffer.byteLength(fullText, "utf8") > 16 * 1024;
+	if (scriptCut || traceCut || aggregateCut) {
 		const aggregateHoldsFullText = input.aggregateOutputPath !== undefined && !outputWarning
 			&& !input.producedChildOutputPaths.has(resolveWorkflowHostOutputClaimPath(input.aggregateOutputPath));
 		if (!aggregateHoldsFullText) saveWarning = writeWorkflowAggregateOutput(input.fullResultPath, fullText, new Set());
 		savedPath = aggregateHoldsFullText ? input.aggregateOutputPath : saveWarning ? undefined : input.fullResultPath;
 		if (scriptCut) shownScriptText = truncateOutput(scriptText, config, savedPath).text;
 	}
+	const compactScriptCut = aggregateCut && Buffer.byteLength(shownScriptText, "utf8") > 2048;
+	if (compactScriptCut) shownScriptText = truncateUtf8Head(shownScriptText, 2048);
 	const shownTrace = traceSection((error) => error.length > WORKFLOW_TRACE_ERROR_MAX_CHARS ? `${error.slice(0, WORKFLOW_TRACE_ERROR_MAX_CHARS)}… (+${error.length - WORKFLOW_TRACE_ERROR_MAX_CHARS} chars)` : error);
-	const traceNote = traceCut && !scriptCut && savedPath ? [`[TRUNCATED: trace errors shortened - full output at ${savedPath}]`] : [];
+	const traceNote = ((traceCut && !scriptCut) || compactScriptCut) && savedPath ? [`[TRUNCATED: ${traceCut ? "trace errors shortened" : "script output shortened"} - full output at ${savedPath}]`] : [];
 	const text = [...input.head, ...(shownScriptText ? [shownScriptText] : []), ...shownTrace, ...input.tail, ...traceNote].join("\n\n");
-	return appendWorkflowOutputWarning(appendWorkflowOutputWarning(text, outputWarning), saveWarning);
+	const shown = appendWorkflowOutputWarning(appendWorkflowOutputWarning(text, outputWarning), saveWarning);
+	const metadata = [...input.verifiedMetadata.slice(0, 2), ...(savedPath ? [`Full output: ${savedPath}`] : []), ...(outputWarning ? [`Output save error: ${safeTerminalText(outputWarning)}`] : []), ...(saveWarning ? [`Full output unavailable: ${safeTerminalText(saveWarning)}`] : []), ...input.verifiedMetadata.slice(2)].map(singleLineResultMetadata);
+	try { return boundRetainedStatusResponse(shown, metadata); }
+	catch { return boundStatusResponse(shown, [...metadata.slice(0, savedPath ? 3 : 2), "Full retrieval metadata unavailable: retention failed."]); }
 }
 
 export function resolveWorkflowChildLocalCwd(input: {
@@ -5562,15 +5584,18 @@ export function createSubagentExecutor(deps: ExecutorDeps): {
 			const detachWorkflowChildMissions = autoMission || missionBinding !== undefined || requestParams.mission === false;
 			const workflowState = missionBinding ? createMissionWorkflowState(missionBinding.location, missionBinding.missionId) : undefined;
 			const attachWorkflowMission = (result: AgentToolResult<Details>): AgentToolResult<Details> => {
-				if (!missionBinding) return missionWarning ? { ...result, details: { ...result.details, missionWarning } } : result;
-				try {
-					return attachMissionToLaunchResult({ binding: missionBinding, result });
+				let attached = result;
+				if (!missionBinding) attached = missionWarning ? { ...result, details: { ...result.details, missionWarning } } : result;
+				else try {
+					attached = attachMissionToLaunchResult({ binding: missionBinding, result });
 				} catch (error) {
 					const warning = `Mission tracking unavailable after launch: ${error instanceof Error ? error.message : String(error)}`;
-					return explicitMission
+					attached = explicitMission
 						? { ...result, isError: true, content: [...result.content, { type: "text", text: warning }], details: { ...result.details, missionWarning: warning } }
 						: { ...result, details: { ...result.details, missionWarning: warning } };
 				}
+				const text = attached.content.flatMap((item) => item.type === "text" ? [item.text] : []).join("\n\n");
+				return { ...attached, content: [{ type: "text", text: boundStatusResponse(text) }, ...attached.content.filter((item) => item.type !== "text")] };
 			};
 			if (workflowRunId) {
 				const toolCallId = _id;
@@ -6613,6 +6638,7 @@ export function createSubagentExecutor(deps: ExecutorDeps): {
 				const runningSummary = workflowRunningChildrenSummary(workflow.children);
 				const outputMappings = workflowOutputPathMappingSummary(workflow.children).trim();
 				const displayText = formatWorkflowResultText({
+					verifiedMetadata: workflowResultMetadata(foregroundWorkflowRunId, runningSummary ? "dispatch complete; child work remains" : "completed", workflow.children, workflowResults),
 					head: [...(workflowPreflight ? [formatWorkflowPreflight(workflowPreflight)] : []), runningSummary ? `Workflow dispatch completed; ${runningSummary}` : "Workflow completed."],
 					script: [
 						`Return:\n${formatWorkflowValue(workflow.value)}`,
@@ -6641,6 +6667,7 @@ export function createSubagentExecutor(deps: ExecutorDeps): {
 				const trace = finalPreflightTrace.map((entry) => ({ line: `- ${entry.operation} ${entry.key}: ${entry.state}${entry.runId ? ` (${entry.runId})` : ""}${entry.warning ? ` — ${entry.warning}` : ""}`, error: entry.error }));
 				const outputMappings = workflowOutputPathMappingSummary(partial.children).trim();
 				const displayText = formatWorkflowResultText({
+					verifiedMetadata: workflowResultMetadata(foregroundWorkflowRunId, "failed", partial.children, workflowResults),
 					head: workflowPreflight ? [formatWorkflowPreflight(workflowPreflight)] : [],
 					script: [
 						`Workflow failed: ${text}`,

@@ -226,4 +226,25 @@ describe("foreground result payload compaction", { skip: !available ? "subagent 
 		assert.ok(savedPath, text.slice(-300));
 		assert.ok(fs.readFileSync(savedPath, "utf-8").includes(output));
 	});
+	for (const saveAggregate of [false, true]) for (const failed of [false, true]) it(`bounds a 64-child workflow aggregate (${failed ? "failure" : "success"}, aggregate=${saveAggregate}) and retains all mappings`, async () => {
+		for (let index = 0; index < 64; index++) mockPi.onCall({ output: "done" });
+		const workflow = `const children = await runs.all(Array.from({ length: 64 }, (_, i) => ({ key: "child-" + i, agent: "tester", task: "Write your findings to: /requested/${"x".repeat(220)}-" + i + ".md", output: "child-" + i + ".md" }))); ${failed ? 'throw new Error("aggregate failure");' : 'return "done";'}`;
+		const result = await makeExecutor(tempDir).execute("large-workflow", { workflowScript: workflow, async: false, output: saveAggregate ? `${tempDir}/aggregate.md` : false }, new AbortController().signal, undefined, makeCtx(tempDir));
+		const text = result.content[0]?.text ?? "";
+		assert.equal(Boolean(result.isError), failed);
+		assert.ok(Buffer.byteLength(text, "utf8") <= 16384, `workflow response has ${Buffer.byteLength(text)} bytes; suffix=${text.slice(-250)}`);
+		assert.match(text, /Status output truncated/);
+		let file = text.match(/Full output: ([^\n]+)/)?.[1];
+		if (!file) {
+			const ledgerFile = text.match(/Full response metadata: ([^\n]+)/)?.[1];
+			assert.ok(ledgerFile, text.slice(-800));
+			const metadata = JSON.parse(fs.readFileSync(ledgerFile, "utf8")).verifiedMetadata as string[];
+			file = metadata.find((line) => line.startsWith("Full output: "))?.slice("Full output: ".length);
+		}
+		assert.ok(file, text.slice(-800));
+		const retained = fs.readFileSync(file, "utf8");
+		assert.match(retained, /Output path mappings:/);
+		assert.ok(retained.includes("child-63"));
+		assert.ok(retained.includes("x".repeat(220) + "-63.md"));
+	});
 });

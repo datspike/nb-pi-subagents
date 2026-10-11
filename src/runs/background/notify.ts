@@ -1,3 +1,4 @@
+import { formatResultPersistenceErrors as childPersistenceErrors } from "../shared/result-persistence.ts";
 /**
  * Completion notification delivery.
  *
@@ -273,14 +274,7 @@ function firstErrorLine(error: unknown): string | undefined {
 	return line ? boundedSafeText(line, ERROR_LINE_MAX_BYTES) : undefined;
 }
 
-/** Keeps execution status distinct from failures to save durable output or metadata. */
-function childPersistenceErrors(child: CompletionChild): string[] {
-	const errors: string[] = [];
-	if (child.outputSaveError) errors.push(`Output save error: ${boundedSafeText(child.outputSaveError)}`);
-	if (child.artifactOutputSaveFailed) errors.push("Retention artifact save failed.");
-	if (child.metadataSaveError) errors.push(`Metadata save error: ${boundedSafeText(child.metadataSaveError)}`);
-	return errors;
-}
+
 
 function childInlinePreview(child: CompletionChild): { preview?: string; truncated?: boolean; unavailableReason?: string } {
 	const output = typeof child.output === "string" ? child.output : "";

@@ -1996,6 +1996,8 @@ async function runSyncCompletionInner(
 	} catch (error) {
 		const message = `Artifact output post-processing failed: ${error instanceof Error ? error.message : String(error)}`;
 		result.outputSaveError = result.outputSaveError ? `${result.outputSaveError}\n${message}` : message;
+		// A partial file is not saved output; keep sibling metadata/transcript locators intact.
+		if (result.artifactPaths) result.artifactPaths = { ...result.artifactPaths, outputPath: "" };
 	}
 
 	if (options.sessionFile && (existsSync(options.sessionFile) || result.messages?.length)) {
@@ -2069,9 +2071,11 @@ async function runSyncCompletionInner(
 					transcriptPath: result.transcriptPath,
 					metadataPath: options.artifactConfig?.includeMetadata === false ? undefined : artifactPathsResult.metadataPath,
 				}));
+				result.artifactPaths = artifactPathsResult;
 			} catch (error) {
 				const message = `Artifact output post-processing failed: ${error instanceof Error ? error.message : String(error)}`;
 				result.outputSaveError = result.outputSaveError ? `${result.outputSaveError}\n${message}` : message;
+				if (result.artifactPaths) result.artifactPaths = { ...result.artifactPaths, outputPath: "" };
 			}
 		}
 		if (result.progress) {

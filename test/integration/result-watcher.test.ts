@@ -1635,6 +1635,36 @@ describe("result watcher", () => {
 		}
 	});
 
+	it("keeps persistence errors visible after acknowledged async intercom delivery", async () => {
+		const root = fs.mkdtempSync(path.join(os.tmpdir(), "pi-intercom-save-errors-"));
+		const emitted: Array<{ event: string; data: any }> = [];
+		const listeners = new Map<string, Set<(data: unknown) => void>>();
+		const notices: unknown[] = [];
+		const pi = { sendMessage(message: unknown) { notices.push(message); }, events: {
+			on(event: string, handler: (data: unknown) => void) { const set = listeners.get(event) ?? new Set(); set.add(handler); listeners.set(event, set); return () => set.delete(handler); },
+			emit(event: string, data: any) { emitted.push({ event, data }); for (const handler of listeners.get(event) ?? []) handler(data); if (event === "subagent:result-intercom") setImmediate(() => pi.events.emit("subagent:result-intercom-delivery", { requestId: data.requestId, delivered: true })); },
+		} };
+		const state = createState(); state.currentSessionId = "session-1";
+		const notifier = registerSubagentNotify(pi as never, state, { batchConfig: { enabled: false } });
+		const watcher = createResultWatcher(pi, state, root, 60_000);
+		try {
+			const resultPath = path.join(root, "save-errors.json");
+			const stale = path.join(root, "stale-output.md"); fs.writeFileSync(stale, "stale");
+			writeIndexedResult(resultPath, { id: "save-errors", agent: "worker", mode: "single", success: true, state: "complete", summary: "done", sessionId: "session-1", intercomTarget: "parent", results: [{ agent: "worker", success: true, output: "completed", artifactPaths: { outputPath: stale }, artifactOutputSaveFailed: true, outputSaveError: "output persistence denied", metadataSaveError: "metadata persistence denied" }] });
+			watcher.primeExistingResults();
+			assert.equal(await waitForPredicate(() => !fs.existsSync(resultPath)), true);
+			const payload = emitted.find((entry) => entry.event === "subagent:result-intercom")?.data;
+			assert.ok(payload);
+			assert.equal(payload.children[0].artifactPath, undefined);
+			assert.match(payload.message, /Output save error: output persistence denied/);
+			assert.match(payload.message, /Metadata save error: metadata persistence denied/);
+			assert.match(payload.message, /Retention artifact save failed/);
+			assert.doesNotMatch(payload.message, /Output artifact:.*stale-output/);
+			assert.equal(emitted.find((entry) => entry.event === "subagent:async-complete")?.data.intercomDelivered, true);
+			assert.equal(notices.length, 0);
+		} finally { watcher.stopResultWatcher(); notifier.dispose(); fs.rmSync(root, { recursive: true, force: true }); }
+	});
+
 	it("does not mark completed siblings as stopped when the overall async result is stopped", async () => {
 		const resultsDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-result-watcher-stopped-siblings-"));
 		try {
