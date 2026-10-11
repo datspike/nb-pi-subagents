@@ -545,6 +545,7 @@ function resolveOneAgent(cwd: string, agentName: string, projectTrusted?: boolea
 }
 
 export async function handleRefinementAction(action: RefinementAction, params: { agent?: string }, ctx: RefinementActionContext): Promise<AgentToolResult<Details>> {
+	if (ctx.projectTrusted === false) return result("Project trust is required to read or change agent refinement overlays.", true);
 	const requestedAgent = params.agent?.trim();
 	if (!requestedAgent) return result(`${action} requires agent. Use /subagents-refine <agent> or subagent({ action: "${action}", agent: "<agent>" }).`, true);
 	let resolved: { ok: true; agent: AgentConfig } | { ok: false; error: string };

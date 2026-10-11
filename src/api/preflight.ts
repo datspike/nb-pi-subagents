@@ -504,7 +504,7 @@ export async function resolveSubagentLaunchContract(input: SubagentLaunchContrac
 		model,
 		...(fast !== undefined ? { fast } : {}),
 		...(effectiveThinking ? { thinking: effectiveThinking } : {}),
-		systemPrompt: buildEffectiveSystemPrompt({ agent, resolvedSkills: resolvedSkills.resolved, cwd: effectiveCwd, ...(outputPath ? { outputPath } : {}) }),
+		systemPrompt: buildEffectiveSystemPrompt({ agent, resolvedSkills: resolvedSkills.resolved, cwd: effectiveCwd, projectTrusted: input.projectTrusted, ...(outputPath ? { outputPath } : {}) }),
 		skills: requestedSkills,
 		toolPlan,
 		...(outputPath ? { outputPath } : {}),
