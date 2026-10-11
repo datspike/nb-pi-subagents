@@ -39,6 +39,7 @@ export interface SubagentNotifyChildOutput {
 	outputArtifactError?: RetainedPathError;
 	structuredOutputError?: RetainedPathError;
 	error?: string;
+	persistenceErrors?: string[];
 	preview: string;
 	previewTruncated?: boolean;
 	previewUnavailableReason?: string;
@@ -112,6 +113,7 @@ export interface CompletionNotification {
 		artifactPaths?: { outputPath?: string };
 		outputSaveError?: string;
 		artifactOutputSaveFailed?: true;
+		metadataSaveError?: string;
 		detached?: boolean;
 		exitCode?: number | null;
 		processSignal?: string | null;
@@ -271,6 +273,15 @@ function firstErrorLine(error: unknown): string | undefined {
 	return line ? boundedSafeText(line, ERROR_LINE_MAX_BYTES) : undefined;
 }
 
+/** Keeps execution status distinct from failures to save durable output or metadata. */
+function childPersistenceErrors(child: CompletionChild): string[] {
+	const errors: string[] = [];
+	if (child.outputSaveError) errors.push(`Output save error: ${boundedSafeText(child.outputSaveError)}`);
+	if (child.artifactOutputSaveFailed) errors.push("Retention artifact save failed.");
+	if (child.metadataSaveError) errors.push(`Metadata save error: ${boundedSafeText(child.metadataSaveError)}`);
+	return errors;
+}
+
 function childInlinePreview(child: CompletionChild): { preview?: string; truncated?: boolean; unavailableReason?: string } {
 	const output = typeof child.output === "string" ? child.output : "";
 	const outputReference = childSavedOutputPath(child);
@@ -303,6 +314,7 @@ function formatChildOutputBlock(children: SubagentNotifyChildOutput[] | undefine
 		if (child.outputArtifactError) lines.push(formatRetainedPathError("Output artifact", child.outputArtifactError));
 		if (child.structuredOutputError) lines.push(formatRetainedPathError("Structured output", child.structuredOutputError));
 		if (child.error) lines.push(`  Error: ${child.error}`);
+		for (const error of child.persistenceErrors ?? []) lines.push(`  Persistence error: ${error}`);
 		if (child.previewTruncated && !child.savedOutputPath && !child.outputArtifactPath) lines.push("  Full output unavailable");
 		if (index >= CHILD_OUTPUT_PREVIEW_COUNT) {
 			lines.push("  Preview: unavailable (notice preview budget exceeded)");
@@ -362,6 +374,7 @@ function formatVerifiedCompletionMetadata(details: SubagentNotifyDetails): strin
 		if (child.outputArtifactPath) lines.push(`Output artifact (retention-managed): ${safeTerminalText(child.outputArtifactPath)}`);
 		if (child.structuredOutputPath) lines.push(`Structured output (retention-managed): ${safeTerminalText(child.structuredOutputPath)}`);
 		if (child.error) lines.push(`Error: ${safeTerminalText(child.error)}`);
+		for (const error of child.persistenceErrors ?? []) lines.push(`Persistence error: ${error}`);
 		if (child.outputArtifactError) lines.push(formatRetainedPathError("Output artifact", child.outputArtifactError));
 		if (child.structuredOutputError) lines.push(formatRetainedPathError("Structured output", child.structuredOutputError));
 	}
@@ -542,6 +555,7 @@ function formatGroupedMetadata(details: SubagentNotifyDetails[]): string[] {
 			if (child.outputArtifactPath) lines.push(`    Output artifact: ${boundedSafeText(child.outputArtifactPath)}`);
 			if (child.structuredOutputPath) lines.push(`    Structured output: ${boundedSafeText(child.structuredOutputPath)}`);
 			if (child.error) lines.push(`    Error: ${firstErrorLine(child.error) ?? "unavailable"}`);
+			for (const error of child.persistenceErrors ?? []) lines.push(`    Persistence error: ${error}`);
 		}
 		for (const line of formatCorrelationLines(detail)) lines.push(`  ${line}`);
 		if (detail.handoffPath) lines.push(`  Parallel handoff: ${boundedSafeText(detail.handoffPath)}`);
@@ -791,9 +805,10 @@ export function buildCompletionDetails(result: CompletionNotification): Subagent
 			status: childStatus(child, workflowRunId ? result.state : undefined),
 		}];
 	}) ?? [];
-	const childOutputs = workflowRunId && result.results?.length
+	const childOutputs = (workflowRunId || result.results?.some((child) => childPersistenceErrors(child).length > 0)) && result.results?.length
 		? result.results.map((child) => {
 			const inline = childInlinePreview(child);
+			const persistenceErrors = childPersistenceErrors(child);
 			const workflowKey = typeof child.workflowKey === "string" && child.workflowKey.trim() ? child.workflowKey.trim() : undefined;
 			const runId = typeof child.runId === "string" && child.runId.trim() ? child.runId.trim() : undefined;
 			const savedOutputPath = childSavedOutputPath(child);
@@ -815,6 +830,7 @@ export function buildCompletionDetails(result: CompletionNotification): Subagent
 				...(outputArtifact.status === "error" ? { outputArtifactError: outputArtifact.error } : {}),
 				...(structuredOutput.status === "error" ? { structuredOutputError: structuredOutput.error } : {}),
 				...(error ? { error } : {}),
+				...(persistenceErrors.length ? { persistenceErrors } : {}),
 				...(inline.preview ? { preview: inline.preview } : { preview: "" }),
 				...(inline.truncated ? { previewTruncated: true } : {}),
 				...(inline.unavailableReason ? { previewUnavailableReason: inline.unavailableReason } : {}),

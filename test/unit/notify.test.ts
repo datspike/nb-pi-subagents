@@ -953,7 +953,8 @@ describe("completion formatting helpers", () => {
 			assert.match(content, /Output artifact \(retention-managed\): .*artifact-é\.txt/);
 			assert.match(content, /Structured output \(retention-managed\): .*output-\[U\+001B\]\[31m\.json/);
 			assert.doesNotMatch(content, /\u001b/);
-			assert.doesNotMatch(content, /configured output-reference save failed|disabled\.txt|missing\.txt|not-a-file/);
+			assert.match(content, /Persistence error: Output save error: configured output-reference save failed/);
+			assert.doesNotMatch(content, /disabled\.txt|missing\.txt|not-a-file/);
 			assert.equal(content.match(/Full output unavailable/g)?.length, 2);
 			assert.equal(content.match(/Output artifact \(retention-managed\):/g)?.length, 4);
 			for (const key of ["binding-failed", "stopped", "timed-out"]) {
@@ -1160,6 +1161,41 @@ describe("completion formatting helpers", () => {
 		assert.equal(buildCompletionDetails({ id: "x", agent: "w", success: false, summary: "terminated", exitCode: 1, processSignal: "SIGTERM", timestamp: 1 }).status, "stopped");
 		assert.equal(buildCompletionDetails({ id: "x", agent: "w", success: false, summary: "terminated", results: [{ success: false, exitCode: 1, processSignal: "SIGTERM" }], timestamp: 1 }).status, "stopped");
 		assert.equal(buildCompletionDetails({ id: "x", agent: "w", success: true, summary: "ok", exitCode: 0, processSignal: "SIGTERM", timestamp: 1 }).status, "completed");
+	});
+
+	it("surfaces save failures without changing successful execution status", () => {
+		for (const mode of ["single", "parallel", "workflow"] as const) {
+			const details = buildCompletionDetails(completionResult({ id: `save-errors-${mode}`, mode, results: [{ workflowKey: "child", runId: "failed-save-child", agent: "worker", success: true, output: "preview", artifactPaths: { outputPath: "/not-saved.md" }, outputSaveError: "Output file could not be read", artifactOutputSaveFailed: true, metadataSaveError: "Metadata disk full" }] }));
+			assert.equal(details.childOutputs?.[0]?.status, "completed");
+			assert.equal(details.childOutputs?.[0]?.outputArtifactPath, undefined);
+			assert.equal(details.childOutputs?.[0]?.persistenceErrors?.length, 3);
+			for (const text of [formatSingleCompletion(details), formatGroupedCompletion([details, { agent: "other", status: "completed", resultPreview: "ok" }])]) {
+				assert.match(text, /Output save error: Output file could not be read/);
+				assert.match(text, /Retention artifact save failed/);
+				assert.match(text, /Metadata save error: Metadata disk full/);
+				assert.doesNotMatch(text, /Output artifact.*\/not-saved/);
+			}
+		}
+	});
+
+	it("retains late persistence errors when a large workflow notice is bounded", async () => {
+		const { notifier, sent } = createPi("session-a");
+		let file: string | undefined;
+		try {
+			const results = Array.from({ length: 64 }, (_, index) => ({ workflowKey: `child-${index}`, runId: `error-run-${index}`, success: true, output: "x".repeat(2000), outputSaveError: `output-error-${index} ${"é".repeat(1000)}`, artifactOutputSaveFailed: true as const, metadataSaveError: `metadata-error-${index}` }));
+			assert.equal(await notifier.deliver(completionResult({ id: "save-errors-large", mode: "workflow", results })), true);
+			const content = (sent[0]!.message as { content: string }).content;
+			assert.ok(Buffer.byteLength(content, "utf8") <= 16384);
+			file = content.match(/Full completion metadata: ([^\n]+)/)?.[1];
+			assert.ok(file);
+			const ledger = (JSON.parse(fs.readFileSync(file, "utf8")) as { verifiedMetadata: string[] }).verifiedMetadata.join("\n");
+			assert.match(ledger, /output-error-63/);
+			assert.match(ledger, /metadata-error-63/);
+			assert.match(ledger, /Retention artifact save failed/);
+		} finally {
+			notifier.dispose();
+			if (file) rmSync(file, { force: true });
+		}
 	});
 
 	it("labels workflow completion and preserves its return/emit/trace preview", () => {

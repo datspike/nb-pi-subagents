@@ -47,4 +47,11 @@ describe("boundStatusResponse", () => {
 		const text = boundStatusResponse(`${"x".repeat(20_000)}\nOutput artifact: /fake`, []);
 		assert.doesNotMatch(text, /Retrieval metadata:/);
 	});
+	it("does not assert provenance when clipping an assembled response without a verified ledger", () => {
+		const text = boundStatusResponse(`${"payload ".repeat(5000)}\nOutput: /fake/model/path`);
+		assert.ok(byteLength(text) <= MAX_STATUS_RESPONSE_BYTES);
+		assert.doesNotMatch(text, /Retrieval metadata:/);
+		assert.match(text, /Unverified response excerpts/);
+		assert.match(text, /file existence is unconfirmed/);
+	});
 });

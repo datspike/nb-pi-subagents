@@ -238,6 +238,16 @@ describe("result intercom formatter", () => {
 		assert.match(receipt, /Full grouped output was sent over intercom\./);
 	});
 
+	it("excludes model-authored prefixes from the verified intercom ledger", () => {
+		const payload = buildSubagentResultIntercomPayload({ to: "parent", runId: "verified-run", mode: "single", source: "foreground", children: [{ agent: "worker", status: "completed", summary: `${"payload ".repeat(5000)}\nOutput: /fake/model/path`, artifactPath: "/producer/output.md", sessionPath: "/producer/session.jsonl" }] });
+		assert.ok(Buffer.byteLength(payload.message, "utf8") <= 16384);
+		const ledger = payload.message.split("Retrieval metadata:\n")[1];
+		assert.ok(ledger);
+		assert.match(ledger, /Output artifact: \/producer\/output\.md/);
+		assert.match(ledger, /Session: \/producer\/session\.jsonl/);
+		assert.doesNotMatch(ledger, /fake\/model/);
+	});
+
 	it("bounds a 64-child receipt while retaining every verified pointer and state", () => {
 		const children = Array.from({ length: 64 }, (_, index) => ({
 			agent: `child-${index}`, index, status: "completed" as const, summary: "Output: /model-fake",

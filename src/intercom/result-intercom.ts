@@ -16,7 +16,7 @@ import {
 	SUBAGENT_RESULT_INTERCOM_DELIVERY_EVENT,
 	SUBAGENT_RESULT_INTERCOM_EVENT,
 } from "../shared/types.ts";
-import { boundRetainedStatusResponse, boundStatusResponse } from "../runs/shared/status-output.ts";
+import { boundRetainedStatusResponse } from "../runs/shared/status-output.ts";
 import { safeTerminalText } from "../shared/display-text.ts";
 
 export function resolveSubagentResultStatus(input: {
@@ -287,7 +287,18 @@ function formatSubagentResultIntercomMessage(input: {
 		lines.push(child.summary);
 	}
 
-	return boundStatusResponse(lines.join("\n"));
+	const metadata = [`Run: ${input.runId}`, `Process status: ${input.status}`, `Children: ${formatStatusCounts(counts)}`];
+	if (input.asyncId) metadata.push(`Async id: ${input.asyncId}`);
+	if (input.asyncDir) metadata.push(`Async dir: ${input.asyncDir}`);
+	if (input.parallelHandoff) metadata.push(`Parallel handoff: ${input.parallelHandoff.path}`);
+	for (const [index, child] of input.children.entries()) {
+		metadata.push(`${index + 1}. ${child.agent} — process ${child.status} · output ${child.outputState ?? "unknown"}`);
+		if (child.intercomTarget) metadata.push(`Run intercom target: ${child.intercomTarget}`);
+		if (child.artifactPath) metadata.push(`Output artifact: ${child.artifactPath}`);
+		if (child.sessionPath) metadata.push(`Session: ${child.sessionPath}`);
+		metadata.push(...formatNestedResultLines(child.children));
+	}
+	return boundRetainedStatusResponse(lines.join("\n"), metadata.map(safeTerminalText));
 }
 
 export function buildSubagentResultIntercomPayload(input: GroupedResultIntercomMessageInput): SubagentResultIntercomPayload {
