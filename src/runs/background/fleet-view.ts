@@ -19,6 +19,7 @@ import { formatNestedRunStatusLines } from "../shared/nested-render.ts";
 import { contextModeLabel, summarizeContextModes } from "../shared/context-mode.ts";
 import { formatAsyncRunOutputPath, formatAsyncRunProgressLabel, listAsyncRuns, type AsyncRunSummary } from "./async-status.ts";
 import { isTrustedRecordedSessionFile } from "../../shared/session-file-trust.ts";
+import { boundRetainedStatusResponse, boundStatusResponse } from "../shared/status-output.ts";
 
 const DEFAULT_TRANSCRIPT_LINES = 80;
 const MAX_TRANSCRIPT_LINES = 500;
@@ -408,7 +409,7 @@ export function inspectSubagentFleet(_params: FleetViewParams, deps: FleetViewDe
 		});
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
-		return { content: [{ type: "text", text: message }], isError: true, details: { mode: "management", results: [] } };
+		return { content: [{ type: "text", text: boundStatusResponse(message, []) }], isError: true, details: { mode: "management", results: [] } };
 	}
 
 	const foregroundControls = deps.state ? [...deps.state.foregroundControls.values()] : [];
@@ -436,7 +437,26 @@ export function inspectSubagentFleet(_params: FleetViewParams, deps: FleetViewDe
 	lines.push("  Tail run transcript: subagent({ action: \"status\", id: \"<run-id>\", view: \"transcript\" })");
 	lines.push("  Tail child transcript: subagent({ action: \"status\", id: \"<run-id>\", index: 0, view: \"transcript\" })");
 
-	return { content: [{ type: "text", text: lines.join("\n").trimEnd() }], details: { mode: "management", results: [] } };
+	// Only runtime identity/state and retrieval commands enter the verified ledger; no preview prose.
+	const metadata: string[] = [];
+	for (const control of foregroundControls) {
+		metadata.push(`Run: ${safeTerminalText(control.runId)} | State: running`, `Status: subagent({ action: "status", id: ${JSON.stringify(control.runId)} })`);
+	}
+	for (const run of detachedForegroundRuns) {
+		metadata.push(`Run: ${safeTerminalText(run.runId)} | State: detached`, `Status: subagent({ action: "status", id: ${JSON.stringify(run.runId)} })`);
+	}
+	for (const run of asyncRuns) {
+		metadata.push(`Run: ${safeTerminalText(run.id)} | State: ${run.state}`, `Dir: ${safeTerminalText(run.asyncDir)}`, `Status: subagent({ action: "status", id: ${JSON.stringify(run.id)} })`);
+		if (run.error) metadata.push(`Error: ${safeTerminalText(run.error)}`);
+		if (run.sessionFile) metadata.push(`Session: ${safeTerminalText(run.sessionFile)}`);
+		const output = formatAsyncRunOutputPath(run);
+		if (output) metadata.push(`Output: ${safeTerminalText(output)}`);
+	}
+	try {
+		return { content: [{ type: "text", text: boundRetainedStatusResponse(lines.join("\n").trimEnd(), metadata) }], details: { mode: "management", results: [] } };
+	} catch {
+		return { content: [{ type: "text", text: boundStatusResponse("Fleet output unavailable: full retrieval metadata could not be retained. Retry fleet or request status for a known run id.") }], isError: true, details: { mode: "management", results: [] } };
+	}
 }
 
 function validateTranscriptIndex(index: number | undefined, steps: AsyncJobStep[]): number | undefined {

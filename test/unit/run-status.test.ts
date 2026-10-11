@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import mutableFs from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -875,6 +877,42 @@ describe("async run status inspection", () => {
 			assert.match(text, /transcript: subagent\(\{ action: "status", id: "run-fleet", view: "transcript" \}\)/);
 			assert.match(text, /transcript: subagent\(\{ action: "status", id: "run-fleet", index: 0, view: "transcript" \}\)/);
 		} finally {
+			fs.rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	it("bounds a large fleet and retains all run identities and status commands", (t) => {
+		const root = fs.mkdtempSync(path.join(os.tmpdir(), "pi-fleet-large-"));
+		let file: string | undefined;
+		try {
+			const controls = Array.from({ length: 100 }, (_, index) => ({ runId: `foreground-${index}`, mode: "single", startedAt: 100, updatedAt: 200, currentAgent: "worker", sessionName: "é".repeat(100) }));
+			const state = { foregroundControls: new Map(controls.map((control) => [control.runId, control])) } as unknown as SubagentState;
+			t.mock.method(mutableFs, "writeFileSync", () => { throw errno("EROFS"); });
+			syncBuiltinESMExports();
+			const rejected = inspectSubagentStatus({ view: "fleet" }, { state, asyncDirRoot: path.join(root, "runs"), resultsDir: path.join(root, "results") });
+			assert.equal(rejected.isError, true);
+			assert.match(textContent(rejected), /full retrieval metadata could not be retained/);
+			assert.ok(Buffer.byteLength(textContent(rejected), "utf8") <= 16384);
+			t.mock.restoreAll();
+			syncBuiltinESMExports();
+			const result = inspectSubagentStatus({ view: "fleet" }, { state, asyncDirRoot: path.join(root, "runs"), resultsDir: path.join(root, "results") });
+			const text = textContent(result);
+			assert.equal(result.isError, undefined);
+			assert.ok(Buffer.byteLength(text, "utf8") <= 16384);
+			assert.match(text, /Subagent fleet: 100 tracked/);
+			assert.match(text, /Status output truncated/);
+			file = text.match(/Full response metadata: ([^\n]+)/)?.[1];
+			assert.ok(file);
+			const ledger = (JSON.parse(fs.readFileSync(file, "utf8")) as { verifiedMetadata: string[] }).verifiedMetadata.join("\n");
+			for (const control of controls) {
+				assert.ok(ledger.includes(`Run: ${control.runId} | State: running`));
+				assert.ok(ledger.includes(`Status: subagent({ action: "status", id: "${control.runId}" })`));
+			}
+			assert.ok(!ledger.includes("é".repeat(100)));
+		} finally {
+			t.mock.restoreAll();
+			syncBuiltinESMExports();
+			if (file) fs.rmSync(file, { force: true });
 			fs.rmSync(root, { recursive: true, force: true });
 		}
 	});

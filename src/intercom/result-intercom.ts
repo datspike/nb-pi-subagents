@@ -16,7 +16,8 @@ import {
 	SUBAGENT_RESULT_INTERCOM_DELIVERY_EVENT,
 	SUBAGENT_RESULT_INTERCOM_EVENT,
 } from "../shared/types.ts";
-import { boundStatusResponse } from "../runs/shared/status-output.ts";
+import { boundRetainedStatusResponse, boundStatusResponse } from "../runs/shared/status-output.ts";
+import { safeTerminalText } from "../shared/display-text.ts";
 
 export function resolveSubagentResultStatus(input: {
 	exitCode?: number;
@@ -425,5 +426,7 @@ export function formatSubagentResultReceipt(input: {
 	}
 
 	lines.push("Full grouped output was sent over intercom.");
-	return lines.join("\n");
+	const safeLines = lines.map(safeTerminalText);
+	const metadata = [...safeLines, ...input.payload.children.map((child, index) => safeTerminalText(`Child ${child.index ?? index}: ${child.agent} | State: ${child.status}`))];
+	return boundRetainedStatusResponse(safeLines, metadata);
 }

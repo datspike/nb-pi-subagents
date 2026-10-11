@@ -6,10 +6,6 @@
  * observation channel, not a delivery acknowledgement.
  */
 
-import { createHash } from "node:crypto";
-import { join } from "node:path";
-import { getArtifactsDir } from "../../shared/artifacts.ts";
-import { writePrivateAtomicJson } from "../../shared/atomic-json.ts";
 import { statSync } from "node:fs";
 import { debuglog } from "node:util";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
@@ -27,7 +23,7 @@ import type { ParentWake } from "../../shared/parent-wake.ts";
 import { resolveSubagentResultStatus } from "../../intercom/result-intercom.ts";
 import { isUnexplainedProcessSignal } from "../shared/process-signal.ts";
 import { capSummaryOutputs } from "../shared/single-output.ts";
-import { boundStatusResponse } from "../shared/status-output.ts";
+import { boundRetainedStatusResponse } from "../shared/status-output.ts";
 import type { ResultDeliveryOwnership } from "./result-delivery-ownership.ts";
 
 export interface SubagentNotifyChildOutput {
@@ -686,17 +682,7 @@ function sendCompletion(pi: Pick<ParentWake, "sendMessage">, items: PendingCompl
 	const rawContent = details.length === 1 ? formatSingleCompletion(details[0]!) : formatGroupedCompletion(details);
 	let content: string;
 	try {
-		const metadata = details.flatMap(formatVerifiedCompletionMetadata);
-		// A full ledger may exceed the notice budget; retain it using the existing artifact lifecycle.
-		if (Buffer.byteLength(rawContent, "utf-8") > 16 * 1024 && (Buffer.byteLength(metadata.join("\n"), "utf-8") > 8 * 1024 || metadata.some((line) => Buffer.byteLength(line, "utf-8") > 512))) {
-			const retained = { content: rawContent, verifiedMetadata: metadata };
-			const digest = createHash("sha256").update(JSON.stringify(retained)).digest("hex");
-			const filePath = join(getArtifactsDir(null), `completion-${digest}_meta.json`);
-			writePrivateAtomicJson(filePath, retained);
-			content = boundStatusResponse(rawContent, [`Full completion metadata: ${filePath}`, "Read the retained file for every child artifact path, workflow identity and session pointer."]);
-		} else {
-			content = boundStatusResponse(rawContent, metadata);
-		}
+		content = boundRetainedStatusResponse(rawContent, details.flatMap(formatVerifiedCompletionMetadata), "Full completion metadata");
 	} catch {
 		// Reject delivery rather than acknowledge an inaccessible retrieval trail.
 		return false;

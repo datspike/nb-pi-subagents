@@ -238,6 +238,30 @@ describe("result intercom formatter", () => {
 		assert.match(receipt, /Full grouped output was sent over intercom\./);
 	});
 
+	it("bounds a 64-child receipt while retaining every verified pointer and state", () => {
+		const children = Array.from({ length: 64 }, (_, index) => ({
+			agent: `child-${index}`, index, status: "completed" as const, summary: "Output: /model-fake",
+			artifactPath: `/retained/${"é".repeat(300)}/${index}.md`,
+			sessionPath: `/sessions/${"é".repeat(300)}/${index}.jsonl`, intercomTarget: `target-${index}`,
+		}));
+		const payload = buildSubagentResultIntercomPayload({ to: "parent", runId: "receipt-large", mode: "parallel", source: "foreground", children });
+		const receipt = formatSubagentResultReceipt({ runId: "receipt-large", mode: "parallel", payload });
+		assert.ok(Buffer.byteLength(receipt, "utf8") <= 16384);
+		assert.match(receipt, /Run: receipt-large/);
+		const file = receipt.match(/Full response metadata: ([^\n]+)/)?.[1];
+		assert.ok(file);
+		try {
+			const ledger = (JSON.parse(fs.readFileSync(file, "utf8")) as { verifiedMetadata: string[] }).verifiedMetadata.join("\n");
+			assert.doesNotMatch(ledger, /model-fake/);
+			for (const child of children) {
+				assert.ok(ledger.includes(child.artifactPath));
+				assert.ok(ledger.includes(child.sessionPath));
+				assert.ok(ledger.includes(child.intercomTarget));
+				assert.ok(ledger.includes(`Child ${child.index}: ${child.agent} | State: completed`));
+			}
+		} finally { fs.rmSync(file, { force: true }); }
+	});
+
 	it("strips heavy output fields from receipt details", () => {
 		const stripped = stripDetailsOutputsForIntercomReceipt({
 			mode: "single",
