@@ -6,12 +6,29 @@
 
 `pi-subagents` lets Pi delegate work to focused child agents. Use it for code review, scouting, implementation, parallel audits, saved workflows, background jobs, and anything else that benefits from a second or third set of model eyes.
 
+## What this fork is
+
+This repository is an independent development line of [`pi-subagents`](https://github.com/nicobailon/pi-subagents). It selectively ports useful ideas from the original project and develops them here when they improve the fork's goals; it is not intended to remain a byte-for-byte mirror or a one-to-one patch series against one upstream release.
+
+The core delegation model remains familiar: foreground and background children, builtin agents, workflows, missions, FleetView, watchdog, and the extension API. The fork's main functional focus is:
+
+| Focus | What changes for users |
+|-------|------------------------|
+| Model-facing context | The fork keeps a compact delegation surface and develops bounded, agent-facing guidance so detailed instructions do not need to be sent in every request. |
+| Agent guide | `subagent({ action: "guide" })` and `/subagents-guide` serve packaged guides by topic and section, with bounded indexes and responses. The guide is usable without loading the package skill. |
+| Trust boundaries | When a project is not trusted, project settings, agents, chains, packages, and skills are ignored. `agentScope: "project"` fails closed; user and builtin sources remain available. |
+| Output and recovery | Progress, status, completion, intercom, and retained transcript views are bounded. Truncation keeps useful metadata and marks incomplete text; failed output or artifact saves stay distinguishable from successful results. |
+| Run reliability | Per-run result leases and serialized promotion/retirement protect newer payloads from stale or replaced results; detached or paused runs retain recovery metadata. |
+| Review and evaluation | Evaluation metadata and child command controls are carried through delegation, while internal review/evaluation fields stay out of the model-facing schema. |
+
+The fork can diverge from the original project and can forward-port selected upstream improvements later. Check the documentation and release notes for the behavior of the version you install; this section describes the fork's own direction, not a promise of permanent uniqueness versus upstream.
+
 <https://github.com/user-attachments/assets/702554ec-faaf-4635-80aa-fb5d6e292fd1>
 
 ## Install
 
 ```bash
-pi install npm:pi-subagents
+pi install git:github.com/datspike/nb-pi-subagents.git
 ```
 
 That is the only required step. Background children use the host's SDK: npm Pi keeps its detached Node runner; the official Pi 0.86.1 Linux x64 standalone release loads the same runner through Pi's embedded SDK, without a separate SDK install. See [Standalone background execution](docs/standalone-background.md) for the supported boundary and validation gate.
