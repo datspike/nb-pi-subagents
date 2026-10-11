@@ -341,14 +341,15 @@ function collectSettingsPackageSkillPaths(cwd: string, agentDir: string): SkillS
 
 function buildSkillPaths(cwd: string, agentDir: string, projectTrusted = true): SkillSearchPath[] {
 	const projectConfigDir = getProjectConfigDir(cwd);
+	const settingsSkillPaths = [...collectSettingsPackageSkillPaths(cwd, agentDir), ...collectSettingsSkillPaths(cwd, agentDir)]
+		.filter((entry) => projectTrusted || entry.source.startsWith("user-"));
 	const skillPaths: SkillSearchPath[] = [
 		...(projectTrusted ? [
 			{ path: path.join(projectConfigDir, "skills"), source: "project" as const },
 			{ path: path.join(cwd, ".agents", "skills"), source: "project" as const },
-			...collectSettingsPackageSkillPaths(cwd, agentDir),
 			...extractSkillPathsFromPackageRoot(cwd, "project-package"),
-			...collectSettingsSkillPaths(cwd, agentDir),
 		] : []),
+		...settingsSkillPaths,
 		{ path: path.join(agentDir, "skills"), source: "user" },
 		{ path: path.join(os.homedir(), ".agents", "skills"), source: "user" },
 		...collectInstalledPackageSkillPaths(cwd, agentDir).filter((entry) => projectTrusted || !entry.source.startsWith("project")),

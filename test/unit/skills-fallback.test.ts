@@ -573,10 +573,11 @@ Fallback global agent.
 			process.env.HOME = fakeHome;
 			process.env.USERPROFILE = fakeHome;
 			makePackageSkill(userPackageRoot, "user-settings-package-skill", "User settings package skill.");
+			writeSkillFile(path.join(userAgentDir, "user-settings-skill"), "User settings skill.");
 			fs.mkdirSync(userAgentDir, { recursive: true });
 			fs.writeFileSync(
 				path.join(userAgentDir, "settings.json"),
-				JSON.stringify({ packages: [{ source: "./user-pkg" }] }, null, 2),
+				JSON.stringify({ packages: [{ source: "./user-pkg" }], skills: ["./user-settings-skill"] }, null, 2),
 				"utf-8",
 			);
 
@@ -586,6 +587,9 @@ Fallback global agent.
 			const skill = discovered.find((entry) => entry.name === "user-settings-package-skill");
 			assert.ok(skill);
 			assert.equal(skill?.source, "user-package");
+			const untrusted = fresh.discoverAvailableSkills(tempDir, { projectTrusted: false });
+			assert.ok(untrusted.find((entry) => entry.name === "user-settings-package-skill"));
+			assert.ok(untrusted.find((entry) => entry.name === "user-settings-skill"));
 		} finally {
 			if (previousHome === undefined) delete process.env.HOME;
 			else process.env.HOME = previousHome;
