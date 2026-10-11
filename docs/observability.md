@@ -334,3 +334,11 @@ Intercom delivery events:
 `src/extension/index.ts` registers the notification handler that consumes `subagent:async-complete`. Control/attention events are surfaced as visible parent notices and persisted for async runs. Native supervisor requests are delivered only to the exact parent session that spawned the child.
 
 `pi.events` is in-process only. It does not reach separate Pi processes or child subagents; use the file lifecycle artifacts or `pi-intercom` for cross-process coordination.
+
+### Remote project trust and saved-output references
+
+Herdr machine placement carries an explicit launching `projectTrusted` decision in its existing resource configuration. The remote bridge acknowledges that policy before a task can be dispatched; absent or mismatched acknowledgement is rejected. Launches without an explicit decision retain the legacy resource-resolution contract.
+
+A launch with `projectTrusted: false` requires the remote Pi session to have started with project trust denied too. Configuration cannot undo project settings or extensions that already loaded at startup. A trusted remote startup or host without a verifiable trust API returns a configuration error without selecting resources or accepting the task. Denied launches resolve only user agent/skill definitions, suppress project refinements and project memory, and do not inherit project context. Project trust settings on the remote host are never changed by the bridge.
+
+Unknown guide topic/section diagnostics quote at most 512 UTF-8 bytes of the requested address and stay within the ordinary guide response budget. Saved-output pointers are reconstructed from producer-owned paths and verified files, not extracted from child prose. References encode control characters as JSON strings on one physical line; their typed `path` remains the original filesystem path.

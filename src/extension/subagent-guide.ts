@@ -118,7 +118,7 @@ export function readSubagentGuide(topic = "overview", root = packageRoot): strin
 	const name = separator === -1 ? topic : topic.slice(0, separator);
 	const sectioned = isGuideTopic(name) && name !== "overview" && name !== "council";
 	if (!isGuideTopic(name) || (separator !== -1 && !sectioned)) {
-		return `Unknown subagents guide topic '${topic}'. Valid topics: ${SUBAGENT_GUIDE_TOPICS.join(", ")}. No files were changed.`;
+		return truncateUtf8(`Unknown subagents guide topic '${truncateUtf8(topic, 512)}'. Valid topics: ${SUBAGENT_GUIDE_TOPICS.join(", ")}. No files were changed.`, SUBAGENT_GUIDE_SECTION_MAX_CHARS);
 	}
 
 	if (!sectioned) {
@@ -140,6 +140,6 @@ export function readSubagentGuide(topic = "overview", root = packageRoot): strin
 		return truncateUtf8(`${intro}\n\n${tableOfContents(name, sections)}`, SUBAGENT_GUIDE_SECTION_MAX_CHARS);
 	}
 	const section = sections.find((candidate) => candidate.address === topic);
-	if (!section) return `Unknown section '${topic}'. No files were changed.\n\n${tableOfContents(name, sections)}`;
+	if (!section) return truncateUtf8(`Unknown section '${truncateUtf8(topic, 512)}'. No files were changed.\n\n${tableOfContents(name, sections)}`, SUBAGENT_GUIDE_SECTION_MAX_CHARS);
 	return sectionText(lines, section, sections);
 }

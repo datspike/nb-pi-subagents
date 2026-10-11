@@ -164,21 +164,20 @@ function formatByteSize(bytes: number): string {
 
 export function formatSavedOutputReference(savedPath: string, fullOutput: string): SavedOutputReference {
 	const absolutePath = path.resolve(savedPath);
+	const displayPath = /[\u0000-\u001f]/u.test(absolutePath) ? JSON.stringify(absolutePath) : absolutePath;
 	const bytes = Buffer.byteLength(fullOutput, "utf-8");
 	const lines = countLines(fullOutput);
 	return {
 		path: absolutePath,
 		bytes,
 		lines,
-		message: `Output saved to: ${absolutePath} (${formatByteSize(bytes)}, ${lines} ${lines === 1 ? "line" : "lines"}). Read this file if needed.`,
+		message: `Output saved to: ${displayPath} (${formatByteSize(bytes)}, ${lines} ${lines === 1 ? "line" : "lines"}). Read this file if needed.`,
 	};
 }
 
 export const INLINE_OUTPUT_HEAD_BYTES = 2_000;
 /** Larger files are not read to check a cap; the output then stays bounded but points to the recorded path. */
 const MAX_FULL_OUTPUT_FILE_BYTES = 50 * 1024 * 1024;
-/** The line finalizeSingleOutput appends when inline output was also saved to an explicit output file. */
-const SAVED_OUTPUT_LINE = /\n\nOutput saved to: (.+) \([^()\n]*\)\. Read this file if needed\.$/;
 const INLINE_TRUNCATION_MARKER = "\n…";
 
 export function truncateUtf8Head(value: string, maxBytes: number): string {
@@ -204,23 +203,24 @@ function readFullOutputFile(filePath: string): string | undefined {
 
 /**
  * Keeps at most INLINE_OUTPUT_HEAD_BYTES of a child's output inline and points to the file holding all of it.
- * Files come only from run records, never from the child's text: a trailing `Output saved to:` line is kept as the
- * pointer only when it names the run's recorded saved-output path, and that recorded path is what gets read.
+ * Files come only from run records, never from the child's text. Saved references are rebuilt from the recorded
+ * path and verified file; a matching producer-generated suffix is removed only to isolate the output body.
  * Short output stays whole; a long output without a verified retention artifact is bounded with an explicit unavailable notice.
  */
 export function capInlineOutput(output: string, files: { artifactPath?: string; savedPath?: string }): string {
-	const match = files.savedPath ? output.match(SAVED_OUTPUT_LINE) : null;
-	const savedLine = match && files.savedPath && match[1] === path.resolve(files.savedPath) ? match : undefined;
-	const body = savedLine ? output.slice(0, savedLine.index) : output;
-	const filePath = savedLine ? files.savedPath : files.artifactPath;
+	const savedOutput = files.savedPath ? readFullOutputFile(files.savedPath) : undefined;
+	const savedSuffix = files.savedPath && savedOutput !== undefined ? `\n\n${formatSavedOutputReference(files.savedPath, savedOutput).message}` : undefined;
+	const savedLine = savedSuffix !== undefined && output.endsWith(savedSuffix);
+	const body = savedLine ? output.slice(0, -savedSuffix!.length) : output;
+	const filePath = savedOutput !== undefined ? files.savedPath : files.artifactPath;
 	if (Buffer.byteLength(body, "utf-8") <= INLINE_OUTPUT_HEAD_BYTES) return output;
-	const fullOutput = filePath ? readFullOutputFile(filePath) : undefined;
+	const fullOutput = savedOutput !== undefined ? savedOutput : filePath ? readFullOutputFile(filePath) : undefined;
 	const prefix = truncateUtf8Head(body, INLINE_OUTPUT_HEAD_BYTES);
 	if (!filePath || fullOutput === undefined || !fullOutput.includes(body)) {
 		const knownPath = filePath && fs.existsSync(filePath) ? `\nRetention artifact: ${path.resolve(filePath)}` : "";
 		return `${prefix}\nFull output unavailable: retention artifact was not verified.${knownPath}${savedLine ? output.slice(body.length) : ""}`;
 	}
-	if (savedLine) return `${prefix}${output.slice(body.length)}`;
+	if (savedOutput !== undefined && files.savedPath) return `${prefix}\n\n${formatSavedOutputReference(files.savedPath, fullOutput).message}`;
 	const reference = formatSavedOutputReference(filePath, fullOutput);
 	return `${prefix}\nFull output: ${reference.path} (${formatByteSize(reference.bytes)}, ${reference.lines} ${reference.lines === 1 ? "line" : "lines"}). Read it if needed.`;
 }

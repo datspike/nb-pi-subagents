@@ -104,3 +104,12 @@ describe("subagent guide", () => {
 		}
 	});
 });
+
+for (const prefix of ["", "workflows/"]) for (const value of ["x", "世界😀"]) it(`bounds unknown guide diagnostics (${prefix || "topic"}, multibyte=${value !== "x"})`, () => {
+	const text = readSubagentGuide(prefix + value.repeat(100000));
+	assert.ok(Buffer.byteLength(text) <= SUBAGENT_GUIDE_SECTION_MAX_CHARS);
+	assert.match(text, /Unknown/);
+	assert.match(text, /No files were changed/);
+	assert.match(text, prefix ? /Sections of guide topic/ : /Valid topics/);
+	assert.doesNotMatch(text, /\uFFFD/u);
+});

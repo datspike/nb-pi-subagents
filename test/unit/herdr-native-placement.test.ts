@@ -8,7 +8,7 @@ import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import type { ChildSession, ChildSessionFactory, ChildSessionLaunch } from "../../src/runs/shared/child-session.ts";
 import { boundedHerdrReconnect, BridgeChannel, createPlacementAwareChildSessionFactory, HERDR_MAX_OWNED_PANES, HerdrPiSession, HerdrPlacedRunOwner, herdrPaneAllocationKey, ownsHerdrPane, parseHerdrAgent, parseHerdrCreated, parseHerdrSessionSnapshot, provisionHerdrPane, reconnectHerdrPiSession, serializeHerdrPiLaunch, withHerdrPaneAllocationLock, type HerdrRunIdentity } from "../../src/runs/shared/herdr-placed-run.ts";
-import { HerdrPiFrameDecoder, encodeHerdrPiFrame, HERDR_PI_MAX_FRAME_BYTES, HERDR_PI_MODE_ENV, HERDR_PI_RUN_ENV, HERDR_PI_RUNTIME_DIR_ENV } from "../../src/runs/shared/herdr-pi-protocol.ts";
+import { HerdrPiFrameDecoder, encodeHerdrPiFrame, HERDR_PI_PROTOCOL, type HerdrPiFrame, HERDR_PI_MAX_FRAME_BYTES, HERDR_PI_MODE_ENV, HERDR_PI_RUN_ENV, HERDR_PI_RUNTIME_DIR_ENV } from "../../src/runs/shared/herdr-pi-protocol.ts";
 import { parseHerdrEndpoint } from "../../src/runs/shared/herdr-connection.ts";
 import { formatHerdrMachineRunnerUnsupported, resolveHerdrMachinePlacement } from "../../src/runs/shared/herdr-machine.ts";
 import { buildRunnerChildLaunch } from "../../src/runs/background/runner-child-launch.ts";
@@ -209,4 +209,78 @@ describe("pane-native Herdr placement public contracts", { skip: process.platfor
 		const uncertain = make("occupied"); await assert.rejects(uncertain.owner.cleanup(true), /uncertain/u); assert.equal(uncertain.calls.includes("pane.close"), false); assert.equal(uncertain.calls.filter((value) => value === "remove").length, 1);
 		const removal = make("exact", true); const concurrent = await Promise.allSettled([removal.owner.cleanup(true), removal.owner.cleanup(true), removal.owner.cleanup(true)]); assert.equal(concurrent.every((result) => result.status === "rejected" && /remove failed/u.test(String(result.reason))), true); await assert.rejects(removal.owner.cleanup(true), /remove failed/u); assert.equal(removal.calls.filter((value) => value === "pane.close").length, 1); assert.equal(removal.calls.filter((value) => value === "remove").length, 1);
 	});
+});
+
+it("serializes the launching project trust without changing legacy absence", () => {
+	for (const projectTrusted of [undefined, false, true]) {
+		const resources = serializeHerdrPiLaunch({ ...launch(true), projectTrusted }).resources as { projectTrusted?: boolean };
+		assert.equal(resources.projectTrusted, projectTrusted);
+		assert.equal(Object.hasOwn(resources, "projectTrusted"), projectTrusted !== undefined);
+	}
+});
+it("excludes a project-only remote agent when launching trust is false", () => {
+	const remote = fs.mkdtempSync(path.join(os.tmpdir(), "pi-herdr-untrusted-"));
+	try {
+		fs.mkdirSync(path.join(remote, ".git")); fs.mkdirSync(path.join(remote, ".pi", "agents"), { recursive: true });
+		fs.writeFileSync(path.join(remote, ".pi", "agents", "remote-untrusted-probe.md"), "---\nname: remote-untrusted-probe\ndescription: probe\ntools: read\n---\nPROJECT_EVIL\n");
+		assert.throws(() => resolveRemoteHerdrResources(remote, { agent: "remote-untrusted-probe", projectTrusted: false } as Parameters<typeof resolveRemoteHerdrResources>[1]), /not found unambiguously/);
+	} finally { fs.rmSync(remote, { recursive: true, force: true }); }
+});
+
+it("requires an exact remote trust acknowledgement and keeps legacy configure compatible", async () => {
+	for (const projectTrusted of [false, true, undefined]) for (const acknowledged of [false, true, undefined, "false"]) {
+		let writes = 0;
+		const channel = { runId: "run_trustack01", wait: async () => ({ type: "configured", projectTrusted: acknowledged }), socket: { write() { writes++; } } };
+		const pending = BridgeChannel.prototype.configure.call(channel as unknown as BridgeChannel, { agent: "worker", ...(projectTrusted !== undefined ? { projectTrusted } : {}) });
+		if (projectTrusted !== undefined && projectTrusted !== acknowledged) await assert.rejects(pending, /project trust acknowledgement/); else await pending;
+		assert.equal(writes, 1);
+	}
+});
+it("resolves untrusted remote user resources despite project agent and skill collisions", () => {
+	const root = fs.mkdtempSync(path.join(os.tmpdir(), "pi-herdr-trust-collision-")), previous = process.env.PI_CODING_AGENT_DIR;
+	const user = path.join(root, "user"), project = path.join(root, "project");
+	process.env.PI_CODING_AGENT_DIR = user;
+	try {
+		fs.mkdirSync(path.join(project, ".git"), { recursive: true });
+		for (const [base, marker] of [[user, "USER_SAFE"], [path.join(project, ".pi"), "PROJECT_EVIL"]]) {
+			fs.mkdirSync(path.join(base, "agents"), { recursive: true }); fs.mkdirSync(path.join(base, "skills", "herdr-trust-skill"), { recursive: true });
+			fs.writeFileSync(path.join(base, "agents", "herdr-trust-probe.md"), `---\nname: herdr-trust-probe\ndescription: probe\ntools: read\nskills:\n  - herdr-trust-skill\ninheritProjectContext: true\n---\n${marker}_AGENT\n`);
+			fs.writeFileSync(path.join(base, "skills", "herdr-trust-skill", "SKILL.md"), `---\nname: herdr-trust-skill\ndescription: ${marker}_SKILL\n---\n${marker}_BODY\n`);
+		}
+		const safe = resolveRemoteHerdrResources(project, { agent: "herdr-trust-probe", projectTrusted: false });
+		assert.match(safe.systemPrompt, /USER_SAFE_AGENT/); assert.match(safe.systemPrompt, /USER_SAFE_SKILL/); assert.doesNotMatch(safe.systemPrompt, /PROJECT_EVIL/); assert.equal(safe.inheritProjectContext, false);
+		assert.match(resolveRemoteHerdrResources(project, { agent: "herdr-trust-probe" }).systemPrompt, /PROJECT_EVIL_AGENT/);
+	} finally { previous === undefined ? delete process.env.PI_CODING_AGENT_DIR : process.env.PI_CODING_AGENT_DIR = previous; fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+it("rejects an untrusted configure before resources when remote startup trust is not denied", { skip: process.platform === "win32", timeout: 10000 }, async () => {
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-herdr-startup-trust-")), oldRun = process.env[HERDR_PI_RUN_ENV], oldDir = process.env[HERDR_PI_RUNTIME_DIR_ENV];
+	process.env[HERDR_PI_RUN_ENV] = "run_starttrust01"; process.env[HERDR_PI_RUNTIME_DIR_ENV] = dir;
+	const handlers = new Map<string, Function>(); let socket: net.Socket | undefined, toolChanges = 0;
+	try {
+		registerHerdrPiBridge({ registerTool() {}, registerCommand() {}, setActiveTools() { toolChanges++; }, on(name: string, handler: Function) { handlers.set(name, handler); } } as never);
+		handlers.get("session_start")?.({}, { isIdle: () => true, hasPendingMessages: () => false, getActiveTools: () => ["read"], isProjectTrusted: () => true, sessionManager: { getSessionId: () => "remote-startup-session" } });
+		socket = net.createConnection(path.join(dir, "bridge.sock"));
+		await new Promise<void>((resolve, reject) => { socket!.once("connect", resolve); socket!.once("error", reject); });
+		const decoder = new HerdrPiFrameDecoder();
+		const errorFrame = new Promise<HerdrPiFrame>((resolve, reject) => { socket!.on("data", (chunk) => { for (const frame of decoder.push(chunk)) if (frame.type === "configured" && typeof frame.error === "string") resolve(frame); }); socket!.once("error", reject); });
+		socket.write(encodeHerdrPiFrame({ protocol: HERDR_PI_PROTOCOL, runId: "run_starttrust01", type: "configure", requestId: "cfg_startup", resources: { agent: "nonexistent-probe", projectTrusted: false } }));
+		const frame = await errorFrame;
+		assert.match(JSON.stringify(frame), /must start with project trust denied/); assert.equal(toolChanges, 0);
+	} finally { socket?.destroy(); handlers.get("session_shutdown")?.(); oldRun === undefined ? delete process.env[HERDR_PI_RUN_ENV] : process.env[HERDR_PI_RUN_ENV] = oldRun; oldDir === undefined ? delete process.env[HERDR_PI_RUNTIME_DIR_ENV] : process.env[HERDR_PI_RUNTIME_DIR_ENV] = oldDir; fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+it("applies and acknowledges untrusted resources through the actual bridge", { skip: process.platform === "win32", timeout: 10000 }, async () => {
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-herdr-denied-config-")), oldRun = process.env[HERDR_PI_RUN_ENV], oldDir = process.env[HERDR_PI_RUNTIME_DIR_ENV], oldAgentDir = process.env.PI_CODING_AGENT_DIR;
+	process.env[HERDR_PI_RUN_ENV] = "run_deniedcfg01"; process.env[HERDR_PI_RUNTIME_DIR_ENV] = dir; process.env.PI_CODING_AGENT_DIR = path.join(dir, "user");
+	const handlers = new Map<string, Function>(); let channel: BridgeChannel | undefined, active = ["read", "bash"];
+	try {
+		fs.mkdirSync(path.join(dir, "user", "agents"), { recursive: true }); fs.writeFileSync(path.join(dir, "user", "agents", "herdr-config-probe.md"), "---\nname: herdr-config-probe\ndescription: probe\ntools: read\ninheritProjectContext: true\n---\nUSER_CONFIG_PROMPT\n");
+		registerHerdrPiBridge({ registerTool() {}, registerCommand() {}, setActiveTools(tools: string[]) { active = tools; }, on(name: string, handler: Function) { handlers.set(name, handler); } } as never);
+		handlers.get("session_start")?.({}, { isIdle: () => true, hasPendingMessages: () => false, getActiveTools: () => active, isProjectTrusted: () => false, sessionManager: { getSessionId: () => "remote-denied-session" } });
+		channel = new BridgeChannel(path.join(dir, "bridge.sock"), "run_deniedcfg01");
+		const ack = await channel.configure({ agent: "herdr-config-probe", projectTrusted: false, toolCeiling: ["read"] });
+		assert.equal(ack.projectTrusted, false); assert.deepEqual(ack.tools, ["read"]); assert.equal(ack.error, undefined);
+		const prompt = handlers.get("before_agent_start")?.({ systemPrompt: "" }); assert.match(prompt.systemPrompt, /USER_CONFIG_PROMPT/);
+	} finally { channel?.close(); handlers.get("session_shutdown")?.(); oldRun === undefined ? delete process.env[HERDR_PI_RUN_ENV] : process.env[HERDR_PI_RUN_ENV] = oldRun; oldDir === undefined ? delete process.env[HERDR_PI_RUNTIME_DIR_ENV] : process.env[HERDR_PI_RUNTIME_DIR_ENV] = oldDir; oldAgentDir === undefined ? delete process.env.PI_CODING_AGENT_DIR : process.env.PI_CODING_AGENT_DIR = oldAgentDir; fs.rmSync(dir, { recursive: true, force: true }); }
 });
