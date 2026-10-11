@@ -587,6 +587,8 @@ Fallback global agent.
 			const skill = discovered.find((entry) => entry.name === "user-settings-package-skill");
 			assert.ok(skill);
 			assert.equal(skill?.source, "user-package");
+			fs.mkdirSync(path.join(tempDir, ".pi"), { recursive: true });
+			fs.writeFileSync(path.join(tempDir, ".pi", "settings.json"), "{ malformed", "utf-8");
 			const untrusted = fresh.discoverAvailableSkills(tempDir, { projectTrusted: false });
 			assert.ok(untrusted.find((entry) => entry.name === "user-settings-package-skill"));
 			assert.ok(untrusted.find((entry) => entry.name === "user-settings-skill"));

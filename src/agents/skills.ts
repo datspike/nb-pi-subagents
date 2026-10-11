@@ -154,11 +154,11 @@ function getGlobalNpmRoot(): string | null {
 	}
 }
 
-function collectInstalledPackageSkillPaths(cwd: string, agentDir: string): SkillSearchPath[] {
+function collectInstalledPackageSkillPaths(cwd: string, agentDir: string, includeProject = true): SkillSearchPath[] {
 	const projectConfigDir = getProjectConfigDir(cwd);
 	const dirs: SkillSearchPath[] = [
-		{ path: path.join(projectConfigDir, "npm", "node_modules"), source: "project-package" },
-		{ path: path.join(agentDir, "npm", "node_modules"), source: "user-package" },
+		...(includeProject ? [{ path: path.join(projectConfigDir, "npm", "node_modules"), source: "project-package" as const }] : []),
+		{ path: path.join(agentDir, "npm", "node_modules"), source: "user-package" as const },
 	];
 
 	const globalRoot = getGlobalNpmRoot();
@@ -206,11 +206,11 @@ function collectInstalledPackageSkillPaths(cwd: string, agentDir: string): Skill
 	return results;
 }
 
-function collectSettingsSkillPaths(cwd: string, agentDir: string): SkillSearchPath[] {
+function collectSettingsSkillPaths(cwd: string, agentDir: string, includeProject = true): SkillSearchPath[] {
 	const results: SkillSearchPath[] = [];
 	const projectConfigDir = getProjectConfigDir(cwd);
 	const settingsFiles = [
-		{ file: path.join(projectConfigDir, "settings.json"), base: projectConfigDir, source: "project-settings" as const },
+		...(includeProject ? [{ file: path.join(projectConfigDir, "settings.json"), base: projectConfigDir, source: "project-settings" as const }] : []),
 		{ file: path.join(agentDir, "settings.json"), base: agentDir, source: "user-settings" as const },
 	];
 
@@ -308,10 +308,10 @@ function resolveSettingsPackageRoot(source: string, baseDir: string): string | u
 	return undefined;
 }
 
-function collectSettingsPackageSkillPaths(cwd: string, agentDir: string): SkillSearchPath[] {
+function collectSettingsPackageSkillPaths(cwd: string, agentDir: string, includeProject = true): SkillSearchPath[] {
 	const projectConfigDir = getProjectConfigDir(cwd);
 	const settingsFiles = [
-		{ file: path.join(projectConfigDir, "settings.json"), base: projectConfigDir, source: "project-package" as const },
+		...(includeProject ? [{ file: path.join(projectConfigDir, "settings.json"), base: projectConfigDir, source: "project-package" as const }] : []),
 		{ file: path.join(agentDir, "settings.json"), base: agentDir, source: "user-package" as const },
 	];
 	const results: SkillSearchPath[] = [];
@@ -341,8 +341,7 @@ function collectSettingsPackageSkillPaths(cwd: string, agentDir: string): SkillS
 
 function buildSkillPaths(cwd: string, agentDir: string, projectTrusted = true): SkillSearchPath[] {
 	const projectConfigDir = getProjectConfigDir(cwd);
-	const settingsSkillPaths = [...collectSettingsPackageSkillPaths(cwd, agentDir), ...collectSettingsSkillPaths(cwd, agentDir)]
-		.filter((entry) => projectTrusted || entry.source.startsWith("user-"));
+	const settingsSkillPaths = [...collectSettingsPackageSkillPaths(cwd, agentDir, projectTrusted), ...collectSettingsSkillPaths(cwd, agentDir, projectTrusted)];
 	const skillPaths: SkillSearchPath[] = [
 		...(projectTrusted ? [
 			{ path: path.join(projectConfigDir, "skills"), source: "project" as const },
@@ -352,7 +351,7 @@ function buildSkillPaths(cwd: string, agentDir: string, projectTrusted = true): 
 		...settingsSkillPaths,
 		{ path: path.join(agentDir, "skills"), source: "user" },
 		{ path: path.join(os.homedir(), ".agents", "skills"), source: "user" },
-		...collectInstalledPackageSkillPaths(cwd, agentDir).filter((entry) => projectTrusted || !entry.source.startsWith("project")),
+		...collectInstalledPackageSkillPaths(cwd, agentDir, projectTrusted),
 	];
 
 	const deduped = new Map<string, SkillSearchPath>();
