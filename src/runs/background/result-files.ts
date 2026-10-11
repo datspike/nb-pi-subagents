@@ -189,8 +189,12 @@ export function writePendingAsyncResultFile(resultPath: string, data: Record<str
 }
 
 export function writeAsyncResultFile(resultPath: string, data: Record<string, unknown>): { state: "public" | "pending" } {
-	const { runId, sessionId, resultsDir } = writeIndexedPendingResultFile(resultPath, data);
-	return promotePendingResultFile(resultsDir, sessionId, runId, path.basename(resultPath), { logFailure: false }) === "promoted"
+	const runId = nonEmptyString(data.runId) ?? nonEmptyString(data.id);
+	if (runId && !activeResultLeases.has(path.join(path.dirname(resultPath), RESULT_LEASE_DIR, createHash("sha256").update(runId).digest("hex")))) {
+		return withResultRunLease(path.dirname(resultPath), runId, () => writeAsyncResultFile(resultPath, data));
+	}
+	const { runId: committedRunId, sessionId, resultsDir } = writeIndexedPendingResultFile(resultPath, data);
+	return promotePendingResultFile(resultsDir, sessionId, committedRunId, path.basename(resultPath), { logFailure: false, leaseHeld: true }) === "promoted"
 		? { state: "public" }
 		: { state: "pending" };
 }
@@ -241,11 +245,18 @@ export function removeMissionObserverIndex(resultsDir: string, runId: string | u
 	}
 }
 
-/** Serializes one run's result publication and retirement across processes. Lookups never take it. */
-export function withResultRunLease<T>(resultsDir: string, runId: string, action: () => T): T {
+/** Serializes one run's result publication, promotion, and retirement across processes. */
+const activeResultLeases = new Set<string>();
+export function withResultRunLease<T>(resultsDir: string, runId: string, action: () => T, waitMs = 200): T {
 	const leaseDir = path.join(resultsDir, RESULT_LEASE_DIR);
 	fs.mkdirSync(leaseDir, { recursive: true });
-	return withFileLease(path.join(leaseDir, createHash("sha256").update(runId).digest("hex")), action);
+	const leasePath = path.join(leaseDir, createHash("sha256").update(runId).digest("hex"));
+	activeResultLeases.add(leasePath);
+	try {
+		return withFileLease(leasePath, action, waitMs);
+	} finally {
+		activeResultLeases.delete(leasePath);
+	}
 }
 
 /**
@@ -304,6 +315,7 @@ export function retireResultSnapshot(publicPath: string, read: ResultSnapshot, p
 		// pending payload onto the public path between two deletions.
 		if (resultSnapshotReplaced(publicPath, read)) {
 			if (payloadPath !== publicPath && readResultPayload(payloadPath) === read.snapshot) fs.rmSync(payloadPath, { force: true });
+			if (read.sessionId) promotePendingResultFile(resultsDir, read.sessionId, read.runId, path.basename(publicPath), { leaseHeld: true });
 			return "replaced";
 		}
 		let removalFailure: { error: unknown } | undefined;
@@ -366,7 +378,17 @@ function assertPendingResultPayloadMatches(filePath: string, sessionId: string, 
 	return resultPayloadMatchesSessionRun(JSON.parse(fs.readFileSync(filePath, "utf-8")), sessionId, runId);
 }
 
-export function promotePendingResultFile(resultsDir: string, sessionId: string, runId: string, file = resultFileName(runId), options: { logFailure?: boolean } = {}): "none" | "promoted" | "pending" {
+export function promotePendingResultFile(resultsDir: string, sessionId: string, runId: string, file = resultFileName(runId), options: { logFailure?: boolean; leaseHeld?: boolean } = {}): "none" | "promoted" | "pending" {
+	const leasePath = path.join(resultsDir, RESULT_LEASE_DIR, createHash("sha256").update(runId).digest("hex"));
+	if (!options.leaseHeld) {
+		if (activeResultLeases.has(leasePath)) return "pending";
+		try {
+			return withResultRunLease(resultsDir, runId, () => promotePendingResultFile(resultsDir, sessionId, runId, file, { ...options, leaseHeld: true }), 0);
+		} catch (error) {
+			if (error instanceof Error && /Timed out waiting for another process/.test(error.message)) return "pending";
+			throw error;
+		}
+	}
 	if (file !== path.basename(file) || !file.endsWith(".json")) return "none";
 	const pendingPath = firstExistingResultFile(resultPendingPaths(resultsDir, sessionId, runId));
 	if (!pendingPath) return "none";
@@ -422,7 +444,10 @@ function resultPayloadLocationFromIndex(resultsDir: string, entry: ResultIndexEn
 	if (entry.file !== path.basename(entry.file) || !entry.file.endsWith(".json")) return undefined;
 	const pendingState = promotePendingResultFile(resultsDir, entry.sessionId, entry.runId, entry.file);
 	if (pendingState === "pending") {
-		return pendingResultLocationForSessionRun(resultsDir, entry.sessionId, entry.runId, entry.file);
+		const pending = pendingResultLocationForSessionRun(resultsDir, entry.sessionId, entry.runId, entry.file);
+		if (pending) return pending;
+		const resultPath = path.join(resultsDir, entry.file);
+		return existingResultFile(resultPath) ? { file: entry.file, path: resultPath, state: "public" } : undefined;
 	}
 	const resultPath = path.join(resultsDir, entry.file);
 	if (pendingState === "promoted" || existingResultFile(resultPath)) return { file: entry.file, path: resultPath, state: "public" };

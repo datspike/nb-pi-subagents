@@ -23,6 +23,7 @@ import type { ParentWake } from "../../shared/parent-wake.ts";
 import { resolveSubagentResultStatus } from "../../intercom/result-intercom.ts";
 import { isUnexplainedProcessSignal } from "../shared/process-signal.ts";
 import { capSummaryOutputs } from "../shared/single-output.ts";
+import { boundStatusResponse } from "../shared/status-output.ts";
 import type { ResultDeliveryOwnership } from "./result-delivery-ownership.ts";
 
 export interface SubagentNotifyChildOutput {
@@ -658,7 +659,7 @@ function sendCompletion(pi: Pick<ParentWake, "sendMessage">, items: PendingCompl
 	if (items.length === 0) return true;
 	const details = items.map((item) => item.details);
 	const rawContent = details.length === 1 ? formatSingleCompletion(details[0]!) : formatGroupedCompletion(details);
-	const content = truncateUtf8Head(rawContent, MAX_COMPLETION_NOTICE_BYTES).text;
+	const content = boundStatusResponse(rawContent);
 	const display = details.some((detail) => detail.source === "foreground" || detail.status !== "completed" || detail.scheduleOrigin !== undefined);
 	const triggerTurn = items.some((item) => item.triggerTurn);
 	// Pi can queue an accepted wake behind the current turn or past agent_settled.
