@@ -424,12 +424,17 @@ export function createResultWatcher(
 			}
 			if (observerSucceeded) {
 				try {
-					if (acknowledgeMissionObserverSnapshot(publicResultPath(file), read) === "replaced") rereadReplacedPayload = true;
+					if (acknowledgeMissionObserverSnapshot(publicResultPath(file), read) === "replaced") {
+						rereadReplacedPayload = true;
+						return;
+					}
 				} catch (error) {
 					observerSucceeded = false;
 					console.error(`Failed to acknowledge the mission observer for '${resultPath}'; will retry:`, error);
 				}
 			}
+			// Runs without a mission index still need replacement detection before delivery.
+			if (markReplacedPayload()) return;
 			const epoch = deliveryEpoch;
 			if (!ownsCompletion(sessionId, completionOwnerId, epoch)) return;
 			// Recorded before dedupe and before the unlink below so bg_wait can

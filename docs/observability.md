@@ -315,6 +315,8 @@ Session files are stored under a per-run session directory. With `context: "fork
 
 Async completions belong only to the originating session. The result watcher emits `subagent:async-complete` for detached runs. Awaited workflow children emit it when they settle, with `awaitedByWorkflow: true`, `parentWorkflowRunId`, and `triggerTurn: false`. They do not send a separate child notification or turn.
 
+If the watcher detects a replacement after the completion observer runs, it stops processing the old snapshot before recording a wait completion or sending intercom and notification messages, then schedules the replacement. This check also applies to runs without a mission observer index. A replacement published during notification delivery is checked separately afterward; delivery that already occurred cannot be retracted.
+
 Successful sibling completions are held briefly and delivered as a quiet grouped completion when they finish within a short window (see `completionBatch` in [configuration.md](configuration.md)), avoiding unread markers on inactive tabs. Failed and paused completions remain visible and fire immediately.
 
 ## Events

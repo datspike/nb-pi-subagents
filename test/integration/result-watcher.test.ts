@@ -2700,3 +2700,25 @@ describe("result watcher", () => {
 	});
 
 });
+
+it("does not deliver a stale completion when the mission observer already detected its replacement", async () => {
+	const resultsDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-result-observer-replacement-"));
+	try {
+		const resultPath = path.join(resultsDir, "observer-replaced.json");
+		const common = { id: "observer-replaced", runId: "observer-replaced", sessionId: "session-current", completionOwnerId: COMPLETION_OWNER_ID, timestamp: 1_000 };
+		writePendingAsyncResultFile(resultPath, { ...common, state: "paused", summary: "old completion" });
+		const delivered: string[] = [], observed: string[] = [], completed: string[] = []; const state = createState(); state.currentSessionId = "session-current";
+		const watcher = createResultWatcher({ events: { on: () => () => {}, emit(event, data) { if (event === SUBAGENT_ASYNC_COMPLETE_EVENT) completed.push(String((data as { summary?: string }).summary)); } } }, state, resultsDir, 60_000, {
+			deliverIntercomResults: false,
+			observeCompletion(result) { observed.push(String(result.summary)); if (result.summary === "old completion") writeAsyncResultFile(resultPath, { ...common, state: "complete", toolCallId: "new-call", summary: "new completion" }); },
+			notifier: { deliver: async (result) => { delivered.push(String(result.summary)); return true; } },
+		});
+		try {
+			watcher.primeExistingResults();
+			assert.equal(await waitForPredicate(() => delivered.includes("new completion") && !fs.existsSync(resultPath)), true);
+		} finally { watcher.stopResultWatcher(); }
+		assert.deepEqual(observed, ["old completion", "new completion"]);
+		assert.deepEqual(delivered, ["new completion"], "a detected obsolete snapshot must never reach notification delivery");
+		assert.deepEqual(completed, ["new completion"], "completion delivery must use only the replacement");
+	} finally { fs.rmSync(resultsDir, { recursive: true, force: true }); }
+});
