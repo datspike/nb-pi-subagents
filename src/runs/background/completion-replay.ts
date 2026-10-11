@@ -65,6 +65,8 @@ function existingFile(value: unknown): string | undefined {
 }
 
 function outputArtifactPath(child: Record<string, unknown>): string | undefined {
+	if (child.artifactOutputSaveFailed === true) return undefined;
+
 	if (!child.artifactPaths || typeof child.artifactPaths !== "object" || Array.isArray(child.artifactPaths)) return undefined;
 	return existingFile((child.artifactPaths as Record<string, unknown>).outputPath);
 }

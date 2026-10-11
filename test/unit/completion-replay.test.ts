@@ -305,3 +305,30 @@ describe("completion replay", () => {
 		}
 	});
 });
+
+describe("failed output artifact provenance in waits and durable replay", () => {
+	for (const failed of [true, false, undefined]) it(`preserves sibling locators and respects producer failure (${failed})`, () => {
+		const root = fs.mkdtempSync(path.join(os.tmpdir(), "pi-replay-provenance-"));
+		try {
+			const outputPath = path.join(root, "output.md"), metadataPath = path.join(root, "metadata.json"), transcriptPath = path.join(root, "transcript.jsonl");
+			const output = "CURRENT_INLINE_OUTPUT"; const fileBody = failed ? "STALE_NOT_CURRENT" : output;
+			fs.writeFileSync(outputPath, fileBody); fs.writeFileSync(metadataPath, "{}"); fs.writeFileSync(transcriptPath, "{}\n");
+			const artifactPaths = { outputPath, metadataPath, transcriptPath }; const state = makeState(), now = Date.now();
+			recordWaitCompletion(state, "run-provenance", { runId: "run-provenance", sessionId: "session-a", agent: "worker", mode: "single", state: "complete", success: true, results: [{ agent: "worker", success: true, outputState: "present", output, artifactPaths, ...(failed !== undefined ? { artifactOutputSaveFailed: failed } : {}) }] }, now, 60_000, { resultsDir: root, sessionId: "session-a" });
+			const terminal = [{ id: "run-provenance", sessionId: "session-a" }] as AsyncRunSummary[];
+			for (const projectedState of [state, makeState()]) {
+				const completion = collectWaitCompletions(terminal, projectedState, root)?.[0];
+				assert.ok(completion); assert.equal(completion.success, true, "artifact failure is separate from execution outcome");
+				assert.equal(completion.results?.[0].artifactPaths?.outputPath, failed ? undefined : outputPath);
+				assert.equal(completion.results?.[0].artifactPaths?.metadataPath, metadataPath);
+				assert.equal(completion.results?.[0].artifactPaths?.transcriptPath, transcriptPath);
+			}
+			const replay = readCompletionReplay(root, "run-provenance", { sessionId: "session-a", now: now + 1 }); assert.ok(replay);
+			const entry = readCompletionArchive(replay.archivePath)?.entries[0]; assert.ok(entry);
+			assert.equal(entry.source, failed ? "result-tail" : "output-artifact");
+			if (failed) { assert.equal(entry.path, undefined); assert.equal(entry.text, output); } else assert.equal(entry.path, outputPath);
+			assert.equal(artifactPaths.outputPath, outputPath, "projection must not mutate producer metadata");
+			assert.equal(fs.readFileSync(outputPath, "utf8"), fileBody, "projection must not alter output files");
+		} finally { fs.rmSync(root, { recursive: true, force: true }); }
+	});
+});

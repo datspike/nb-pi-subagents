@@ -164,14 +164,106 @@ function formatByteSize(bytes: number): string {
 
 export function formatSavedOutputReference(savedPath: string, fullOutput: string): SavedOutputReference {
 	const absolutePath = path.resolve(savedPath);
+	const displayPath = /[\u0000-\u001f]/u.test(absolutePath) ? JSON.stringify(absolutePath) : absolutePath;
 	const bytes = Buffer.byteLength(fullOutput, "utf-8");
 	const lines = countLines(fullOutput);
 	return {
 		path: absolutePath,
 		bytes,
 		lines,
-		message: `Output saved to: ${absolutePath} (${formatByteSize(bytes)}, ${lines} ${lines === 1 ? "line" : "lines"}). Read this file if needed.`,
+		message: `Output saved to: ${displayPath} (${formatByteSize(bytes)}, ${lines} ${lines === 1 ? "line" : "lines"}). Read this file if needed.`,
 	};
+}
+
+export const INLINE_OUTPUT_HEAD_BYTES = 2_000;
+/** Larger files are not read to check a cap; the output then stays bounded but points to the recorded path. */
+const MAX_FULL_OUTPUT_FILE_BYTES = 50 * 1024 * 1024;
+const INLINE_TRUNCATION_MARKER = "\n…";
+
+export function truncateUtf8Head(value: string, maxBytes: number): string {
+	if (maxBytes <= 0) return "";
+	const bytes = Buffer.from(value, "utf-8");
+	if (bytes.length <= maxBytes) return value;
+	const markerBytes = Buffer.byteLength(INLINE_TRUNCATION_MARKER, "utf-8");
+	if (maxBytes < markerBytes) return "";
+	let end = Math.max(0, maxBytes - markerBytes);
+	while (end > 0 && (bytes[end]! & 0xc0) === 0x80) end -= 1;
+	return `${bytes.subarray(0, end).toString("utf-8")}${INLINE_TRUNCATION_MARKER}`;
+}
+
+function readFullOutputFile(filePath: string): string | undefined {
+	try {
+		const stat = fs.statSync(filePath);
+		if (!stat.isFile() || stat.size > MAX_FULL_OUTPUT_FILE_BYTES) return undefined;
+		return fs.readFileSync(filePath, "utf-8");
+	} catch {
+		return undefined;
+	}
+}
+
+/**
+ * Keeps at most INLINE_OUTPUT_HEAD_BYTES of a child's output inline and points to the file holding all of it.
+ * Files come only from run records, never from the child's text. Saved references are rebuilt from the recorded
+ * path and verified file; a matching producer-generated suffix is removed only to isolate the output body.
+ * Short output stays whole; a long output without a verified retention artifact is bounded with an explicit unavailable notice.
+ */
+export function capInlineOutput(output: string, files: { artifactPath?: string; savedPath?: string }): string {
+	const savedOutput = files.savedPath ? readFullOutputFile(files.savedPath) : undefined;
+	const savedSuffix = files.savedPath && savedOutput !== undefined ? `\n\n${formatSavedOutputReference(files.savedPath, savedOutput).message}` : undefined;
+	const savedLine = savedSuffix !== undefined && output.endsWith(savedSuffix);
+	const body = savedLine ? output.slice(0, -savedSuffix!.length) : output;
+	const filePath = savedOutput !== undefined ? files.savedPath : files.artifactPath;
+	if (Buffer.byteLength(body, "utf-8") <= INLINE_OUTPUT_HEAD_BYTES) return output;
+	const fullOutput = savedOutput !== undefined ? savedOutput : filePath ? readFullOutputFile(filePath) : undefined;
+	const prefix = truncateUtf8Head(body, INLINE_OUTPUT_HEAD_BYTES);
+	if (!filePath || fullOutput === undefined || !fullOutput.includes(body)) {
+		const knownPath = filePath && fs.existsSync(filePath) ? `\nRetention artifact: ${path.resolve(filePath)}` : "";
+		return `${prefix}\nFull output unavailable: retention artifact was not verified.${knownPath}${savedLine ? output.slice(body.length) : ""}`;
+	}
+	if (savedOutput !== undefined && files.savedPath) return `${prefix}\n\n${formatSavedOutputReference(files.savedPath, fullOutput).message}`;
+	const reference = formatSavedOutputReference(filePath, fullOutput);
+	return `${prefix}\nFull output: ${reference.path} (${formatByteSize(reference.bytes)}, ${reference.lines} ${reference.lines === 1 ? "line" : "lines"}). Read it if needed.`;
+}
+
+/** Keep final foreground metadata visible while bounding body text and appended suffixes. */
+export function capFinalInlineOutput(
+	output: string,
+	files: { artifactPath?: string; savedPath?: string },
+	suffix = "",
+	maxBytes = 8 * 1024,
+): string {
+	const capped = capInlineOutput(output, files);
+	if (Buffer.byteLength(`${capped}${suffix}`, "utf-8") <= maxBytes) return `${capped}${suffix}`;
+	const metadata = capped.split("\n").filter((line) => /(?:Output saved to:|Full output:|Retention artifact:)/.test(line)).join("\n");
+	const metadataText = metadata ? `\n${truncateUtf8Head(metadata, Math.min(2048, Math.floor(maxBytes / 3)))}` : "";
+	const suffixBudget = Math.min(4096, Math.floor(maxBytes / 3));
+	const suffixLines = suffix.split(/\r?\n/).filter(Boolean);
+	const pointerLines = suffixLines.filter((line) => /^(?:Worktree handoff:|Full patches:|Worktree finalization retained)/.test(line));
+	const previewLines = suffixLines.filter((line) => !pointerLines.includes(line));
+	const previewText = previewLines.join("\n");
+	const pointerBudgetEach = pointerLines.length > 0 ? Math.max(1, Math.floor(suffixBudget * 0.4)) : 0;
+	const boundedPointers = pointerLines.map((line) => truncateUtf8Head(line, pointerBudgetEach)).join("\n");
+	const previewBudget = Math.max(0, suffixBudget - Buffer.byteLength(boundedPointers, "utf-8") - (boundedPointers && previewText ? 1 : 0));
+	const boundedPreview = truncateUtf8Head(previewText, previewBudget);
+	const suffixText = [boundedPreview, boundedPointers].filter(Boolean).length > 0 ? `\n${[boundedPreview, boundedPointers].filter(Boolean).join("\n")}` : "";
+	const reservedBytes = Buffer.byteLength(`${metadataText}${suffixText}`, "utf-8");
+	if (reservedBytes >= maxBytes) return truncateUtf8Head(`${metadataText}${suffixText}`, maxBytes);
+	return `${truncateUtf8Head(output, maxBytes - reservedBytes)}${metadataText}${suffixText}`;
+}
+
+/** Applies capInlineOutput to each `agent:\noutput` section of a run summary whose child output is long. */
+export function capSummaryOutputs(summary: string, results: ReadonlyArray<{ agent?: unknown; output?: unknown; artifactPaths?: { outputPath?: unknown }; artifactOutputSaveFailed?: unknown; savedOutputPath?: unknown }> | undefined): string {
+	let capped = summary;
+	for (const result of results ?? []) {
+		if (typeof result.agent !== "string" || typeof result.output !== "string" || Buffer.byteLength(result.output, "utf-8") <= INLINE_OUTPUT_HEAD_BYTES) continue;
+		const artifactPath = result.artifactOutputSaveFailed === true || typeof result.artifactPaths?.outputPath !== "string" ? undefined : result.artifactPaths.outputPath;
+		const savedPath = typeof result.savedOutputPath === "string" && result.savedOutputPath ? result.savedOutputPath : undefined;
+		const section = `${result.agent}:\n${result.output}`;
+		const index = capped.indexOf(section);
+		if (index < 0) continue;
+		capped = `${capped.slice(0, index)}${result.agent}:\n${capInlineOutput(result.output, { artifactPath, savedPath })}${capped.slice(index + section.length)}`;
+	}
+	return capped;
 }
 
 export function validateFileOnlyOutputMode(outputMode: OutputMode | undefined, outputPath: string | undefined, context: string): string | undefined {

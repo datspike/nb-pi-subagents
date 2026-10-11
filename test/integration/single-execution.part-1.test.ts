@@ -4254,7 +4254,8 @@ Answer only from the supplied synthetic text.
 		const text = result.content[0]?.text ?? "";
 		assert.equal(result.isError, undefined, text);
 		assert.ok(Buffer.byteLength(text, "utf-8") < 210_000);
-		assert.match(text.slice(-500), /Call trace:\n- run scan: started\n- run scan: completed/);
+		assert.ok(Buffer.byteLength(text, "utf8") <= 16384);
+		assert.match(text, /Call trace:\n- run scan: started\n- run scan: completed/);
 		const savedPath = /\[TRUNCATED: .* - full output at (.+)\]/.exec(text)?.[1];
 		assert.ok(savedPath, text.slice(0, 500));
 		assert.ok(!savedPath.includes(`${path.sep}outputs${path.sep}`), `full result must not share the child outputs tree: ${savedPath}`);

@@ -5,6 +5,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import type { Message, Usage } from "@earendil-works/pi-ai";
 import {
+	capFinalInlineOutput,
 	captureSingleOutputSnapshot,
 	extractChildWrittenOutput,
 	finalizeSingleOutput,
@@ -15,6 +16,7 @@ import {
 	requestedOutputPathFromTask,
 	resolveSingleOutput,
 	resolveSingleOutputPath,
+	truncateUtf8Head,
 	validateFileOnlyOutputMode,
 } from "../../src/runs/shared/single-output.ts";
 
@@ -370,4 +372,48 @@ describe("finalizeSingleOutput", () => {
 
 		assert.equal(result.displayOutput.match(/Output saved to:/g)?.length, 1);
 	});
+
+	it("keeps final inline output bounded when suffix metadata exceeds the remaining budget", () => {
+		const result = capFinalInlineOutput("body", {}, "\n\n" + "x".repeat(20_000), 1024);
+		assert.ok(Buffer.byteLength(result, "utf-8") <= 1024);
+	});
+
+	it("does not emit a truncation marker when no bytes are available", () => {
+		assert.equal(truncateUtf8Head("hello", 0), "");
+		for (const bytes of [1, 2, 3]) assert.ok(Buffer.byteLength(truncateUtf8Head("éhello", bytes), "utf8") <= bytes);
+	});
+
+	it("keeps worktree retrieval pointers when truncating a large suffix", () => {
+		const result = capFinalInlineOutput("body", {}, `\n\n${"diff ".repeat(10_000)}\nWorktree handoff: /tmp/handoff.json\nFull patches: /tmp/patches`, 8192);
+		assert.ok(Buffer.byteLength(result, "utf-8") <= 8192);
+		assert.match(result, /Worktree handoff: \/tmp\/handoff\.json/);
+		assert.match(result, /Full patches: \/tmp\/patches/);
+	});
+
+	it("keeps both worktree pointers when paths are long", () => {
+		const handoff = `/tmp/${"h".repeat(1_900)}.json`;
+		const patches = `/tmp/${"p".repeat(1_900)}`;
+		const result = capFinalInlineOutput("body", {}, `\n\n${"diff ".repeat(10_000)}\nWorktree handoff: ${handoff}\nFull patches: ${patches}`, 8192);
+		assert.ok(Buffer.byteLength(result, "utf-8") <= 8192);
+		assert.match(result, /Worktree handoff:/);
+		assert.match(result, /Full patches:/);
+	});
+});
+
+for (const name of ["report\nfinal.md", "отчёт\r\nфинал.md", "report\tfinal.md"]) it(`keeps a typed saved-output pointer with control characters: ${JSON.stringify(name)}`, () => {
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-output-control-path-"));
+	try {
+		const file = path.join(dir, name), output = "x".repeat(5000); fs.writeFileSync(file, output);
+		const reference = formatSavedOutputReference(file, output);
+		const finalized = finalizeSingleOutput({ fullOutput: output, exitCode: 0, savedPath: file });
+		for (const input of [output, finalized.displayOutput]) for (const suffix of ["", "\n" + "suffix ".repeat(5000)]) {
+			const text = capFinalInlineOutput(input, { savedPath: finalized.savedPath }, suffix);
+			assert.ok(Buffer.byteLength(text) <= 8192);
+			assert.doesNotMatch(text, /Full output unavailable/);
+			assert.ok(text.includes(reference.message));
+			assert.ok(reference.message.includes(JSON.stringify(file)));
+			assert.equal(reference.message.split("\n").length, 1);
+		}
+		assert.equal(fs.readFileSync(file, "utf8"), output);
+	} finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });

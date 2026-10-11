@@ -48,6 +48,7 @@ import {
 	type RegisteredBackgroundWorkItem,
 } from "../../api/background-work.ts";
 import { formatAsyncRunList, listAsyncRuns, type AsyncRunSummary } from "./async-status.ts";
+import { boundStatusResponse } from "../shared/status-output.ts";
 import {
 	DIRS,
 	INTERCOM_DETACH_REQUEST_EVENT,
@@ -360,6 +361,7 @@ function result(text: string, isError = false, completions?: WaitCompletion[]): 
 	for (const completion of completions ?? []) {
 		if (completion.workflowReceiptPath) text += `\nWorkflow receipt [${completion.runId}]: ${completion.workflowReceiptPath}`;
 	}
+	text = boundStatusResponse(text);
 	return {
 		content: [{ type: "text", text }],
 		...(isError ? { isError: true } : {}),
@@ -384,7 +386,7 @@ function windowElapsedResult(
 	activeProviderItems: readonly RegisteredBackgroundWorkItem[] = [],
 ): AgentToolResult<Details> {
 	return {
-		content: [{ type: "text", text }],
+		content: [{ type: "text", text: boundStatusResponse(text) }],
 		details: {
 			mode: "management",
 			results: [],
@@ -457,7 +459,7 @@ function asyncWaitUpdate(runs: AsyncRunSummary[], providerCount: number, elapsed
 		`Waiting ${formatDuration(elapsedMs)} for ${runs.length} async run(s) and ${providerCount} provider item(s).`,
 		...activity,
 	].join(" · ");
-	return result([headline, runs.length > 0 ? formatAsyncRunList(runs) : ""].filter(Boolean).join("\n"));
+	return result(boundStatusResponse([headline, runs.length > 0 ? formatAsyncRunList(runs) : ""].filter(Boolean).join("\n")));
 }
 
 const TRANSCRIPT_TAIL_BYTES = 128 * 1024;
@@ -552,7 +554,7 @@ function detachedForegroundWaitUpdate(run: ForegroundResumeRun, pendingIndices: 
 		if (!activity && child.transcriptPath) lines.push("  live transcript has no new activity yet");
 		if (!child.transcriptPath) lines.push("  live transcript unavailable; waiting for completion event");
 	}
-	return result(lines.join("\n"));
+	return result(boundStatusResponse(lines.join("\n")));
 }
 
 async function waitForDetachedForegroundRun(

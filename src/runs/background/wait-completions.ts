@@ -87,8 +87,9 @@ export function toWaitCompletion(data: Record<string, unknown>, runId: string): 
 				? child.outputState
 				: undefined;
 			const artifactPaths = child.artifactPaths !== null && typeof child.artifactPaths === "object"
-				? (child.artifactPaths as Partial<ArtifactPaths>)
+				? { ...(child.artifactPaths as Partial<ArtifactPaths>) }
 				: undefined;
+			if (artifactPaths && child.artifactOutputSaveFailed === true) delete artifactPaths.outputPath;
 			const agent = asNonEmptyString(child.agent);
 			const childRunId = asNonEmptyString(child.runId);
 			const usage = projectedUsage(child.usage);

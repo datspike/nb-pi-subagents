@@ -575,6 +575,7 @@ async function runSingleAttempt(
 		let sessionSettled = false;
 		let lifecycleFinished = false;
 		let detached = false;
+		let hostStopReason: string | undefined;
 		let intercomStarted = false;
 		let assistantError: string | undefined;
 		let removeAbortListener: (() => void) | undefined;
@@ -1328,9 +1329,10 @@ async function runSingleAttempt(
 			}
 			const forcedDrainAfterFinalSuccess = (forced || forcedTermination) && (cleanTerminalAssistantStopReceived || agentSettledReceived) && !closeError;
 			const forcedDrainAfterEmptyTerminal = forcedDrainAfterFinalSuccess && hasEmptyTerminalAssistantResponse(result.messages ?? []);
-			if (!closeError && (abortedBySignal || session?.shutDown) && !result.interrupted && !result.timedOut) {
-				closeError = session?.shutDown ? "Subagent stopped because the parent session shut down." : STOPPED_BEFORE_COMPLETION_ERROR;
+			if (!closeError && (abortedBySignal || session?.shutDown || hostStopReason) && !result.interrupted && !result.timedOut) {
+				closeError = hostStopReason ?? (session?.shutDown ? "Subagent stopped because the parent session shut down." : STOPPED_BEFORE_COMPLETION_ERROR);
 			}
+			if (hostStopReason && !result.interrupted && !result.timedOut) result.stopped = true;
 			// A workflow child ended by the workflow's abort signal was stopped, not failed.
 			if (options.abortedAsStopped && abortedBySignal && !session?.shutDown && !result.interrupted && !result.timedOut) result.stopped = true;
 			if (!closeError && forced && !forcedDrainAfterFinalSuccess) {
@@ -1426,9 +1428,18 @@ async function runSingleAttempt(
 				if (abortedBySignal || interruptedByControl || result.timedOut) {
 					abortChild();
 				}
-				options.onChildSession?.({ steer: (text) => created.steer(text), followUp: (text) => created.followUp(text) });
+				options.onChildSession?.({
+					steer: (text) => created.steer(text),
+					followUp: (text) => created.followUp(text),
+					stop: (reason) => {
+						if (sessionSettled || lifecycleFinished) return;
+						hostStopReason = reason;
+						abortChild();
+					},
+				});
 				messageBaseline = created.messages.length;
-				await created.prompt(`Task: ${task}`);
+				// A runtime replacement can stop a child that detached while it was still being created.
+				if (!hostStopReason) await created.prompt(`Task: ${task}`);
 				settle(undefined);
 			} catch (error) {
 				settle(error ?? new Error("Child session failed."));
@@ -1655,7 +1666,7 @@ async function runSyncCompletionInner(
 	const agent = agents.find((a) => a.name === agentName);
 	if (!agent) {
 		const diagnosticContext = options.unknownAgentDiagnosticContext
-			?? unknownAgentDiagnosticContext(discoverAgents(path.resolve(options.cwd ?? runtimeCwd), "both"));
+			?? unknownAgentDiagnosticContext(discoverAgents(path.resolve(options.cwd ?? runtimeCwd), "both", undefined, { projectTrusted: options.projectTrusted }));
 		return redactResultPrompt(withRunContext({
 			index: options.index ?? 0,
 			agent: agentName,
@@ -1759,6 +1770,7 @@ async function runSyncCompletionInner(
 		runtimeCwd,
 		agent.skillPath,
 		agent.filePath ? path.dirname(agent.filePath) : skillCwd,
+		options.projectTrusted,
 	);
 	if (skillNames.some((skill) => skill.trim() === "pi-subagents") && missingSkills.includes("pi-subagents")) {
 		return redactResultPrompt(withRunContext({
@@ -1771,7 +1783,7 @@ async function runSyncCompletionInner(
 			error: "Skills not found: pi-subagents",
 		}, options.context));
 	}
-	const systemPrompt = buildEffectiveSystemPrompt({ agent, resolvedSkills, cwd: skillCwd, ...(options.outputPath ? { outputPath: options.outputPath } : {}) });
+	const systemPrompt = buildEffectiveSystemPrompt({ agent, resolvedSkills, cwd: skillCwd, projectTrusted: options.projectTrusted, ...(options.outputPath ? { outputPath: options.outputPath } : {}) });
 
 	const { model: selectedModel, requestedModel } = resolveModelSelection(
 		options.modelOverride ?? agent.model,
@@ -1984,6 +1996,8 @@ async function runSyncCompletionInner(
 	} catch (error) {
 		const message = `Artifact output post-processing failed: ${error instanceof Error ? error.message : String(error)}`;
 		result.outputSaveError = result.outputSaveError ? `${result.outputSaveError}\n${message}` : message;
+		// A partial file is not saved output; keep sibling metadata/transcript locators intact.
+		if (result.artifactPaths) result.artifactPaths = { ...result.artifactPaths, outputPath: "" };
 	}
 
 	if (options.sessionFile && (existsSync(options.sessionFile) || result.messages?.length)) {
@@ -2057,9 +2071,11 @@ async function runSyncCompletionInner(
 					transcriptPath: result.transcriptPath,
 					metadataPath: options.artifactConfig?.includeMetadata === false ? undefined : artifactPathsResult.metadataPath,
 				}));
+				result.artifactPaths = artifactPathsResult;
 			} catch (error) {
 				const message = `Artifact output post-processing failed: ${error instanceof Error ? error.message : String(error)}`;
 				result.outputSaveError = result.outputSaveError ? `${result.outputSaveError}\n${message}` : message;
+				if (result.artifactPaths) result.artifactPaths = { ...result.artifactPaths, outputPath: "" };
 			}
 		}
 		if (result.progress) {

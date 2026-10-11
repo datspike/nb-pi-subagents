@@ -64,6 +64,29 @@ describe("agent management config parsing", () => {
 		});
 	}
 
+	it("rejects untrusted project-scope create before touching the project directory", () => {
+		const result = handleCreate(
+			{ config: { name: "untrusted", scope: "project", description: "Should not be written." } },
+			{ cwd: tempDir, modelRegistry: { getAvailable: () => [] }, projectTrusted: false },
+		);
+
+		assert.equal(result.isError, true);
+		assert.match(readText(result), /requires project trust/u);
+		assert.equal(fs.existsSync(path.join(tempDir, ".pi", "agents", "untrusted.md")), false);
+	});
+
+	it("rejects untrusted project-scope eject before creating a project override", () => {
+		const result = handleManagementAction(
+			"eject",
+			{ agent: "worker", agentScope: "project" },
+			{ cwd: tempDir, modelRegistry: { getAvailable: () => [] }, projectTrusted: false },
+		);
+
+		assert.equal(result.isError, true);
+		assert.match(readText(result), /requires project trust/u);
+		assert.equal(fs.existsSync(path.join(tempDir, ".pi", "agents", "worker.md")), false);
+	});
+
 	for (const [indicator, block, description] of [
 		["|-", "  Summarize project documentation.\n  Keep the summary concise.", "Summarize project documentation.\nKeep the summary concise."],
 		[">-", "  Summarize project\n  documentation.\n\n  Keep the summary concise.", "Summarize project documentation.\nKeep the summary concise."],

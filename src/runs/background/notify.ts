@@ -1,3 +1,4 @@
+import { formatResultPersistenceErrors as childPersistenceErrors } from "../shared/result-persistence.ts";
 /**
  * Completion notification delivery.
  *
@@ -22,6 +23,8 @@ import { safeTerminalText } from "../../shared/display-text.ts";
 import type { ParentWake } from "../../shared/parent-wake.ts";
 import { resolveSubagentResultStatus } from "../../intercom/result-intercom.ts";
 import { isUnexplainedProcessSignal } from "../shared/process-signal.ts";
+import { capSummaryOutputs } from "../shared/single-output.ts";
+import { boundRetainedStatusResponse } from "../shared/status-output.ts";
 import type { ResultDeliveryOwnership } from "./result-delivery-ownership.ts";
 
 export interface SubagentNotifyChildOutput {
@@ -36,6 +39,8 @@ export interface SubagentNotifyChildOutput {
 	structuredOutputPath?: string;
 	outputArtifactError?: RetainedPathError;
 	structuredOutputError?: RetainedPathError;
+	error?: string;
+	persistenceErrors?: string[];
 	preview: string;
 	previewTruncated?: boolean;
 	previewUnavailableReason?: string;
@@ -100,13 +105,16 @@ export interface CompletionNotification {
 		revival?: string;
 		success?: boolean;
 		output?: string;
+		error?: string;
 		structuredOutput?: unknown;
 		structuredOutputPath?: string;
 		outputState?: "present" | "absent" | "unknown";
 		outputReference?: string | { path?: string };
+		savedOutputPath?: string;
 		artifactPaths?: { outputPath?: string };
 		outputSaveError?: string;
 		artifactOutputSaveFailed?: true;
+		metadataSaveError?: string;
 		detached?: boolean;
 		exitCode?: number | null;
 		processSignal?: string | null;
@@ -164,10 +172,12 @@ export interface CompletionNotifier {
 	dispose(): void;
 }
 
-const CHILD_OUTPUT_PREVIEW_MAX_BYTES = 4 * 1024;
+const CHILD_OUTPUT_PREVIEW_MAX_BYTES = 2_000;
+const ERROR_LINE_MAX_BYTES = 300;
 const CHILD_OUTPUT_PREVIEW_COUNT = 8;
 const PREVIEW_TRUNCATION_MARKER = "...[preview truncated]";
 const COMPLETION_SEND_TTL_MS = 10 * 60 * 1000;
+const MAX_COMPLETION_NOTICE_BYTES = 16 * 1024;
 const COMPLETION_SEND_REGISTRY_CAP = 4_096;
 type CompletionChild = NonNullable<CompletionNotification["results"]>[number];
 interface RetainedPathError { path: string; code?: string; message: string }
@@ -200,7 +210,7 @@ function outputPathFromReference(value: CompletionChild["outputReference"]): str
 }
 
 function childSavedOutputPath(child: CompletionChild): string | undefined {
-	return outputPathFromReference(child.outputReference);
+	return nonemptyPath(child.savedOutputPath) ?? outputPathFromReference(child.outputReference);
 }
 
 function nonemptyPath(value: unknown): string | undefined {
@@ -258,6 +268,14 @@ function isDegenerateOutput(text: string): boolean {
 	return !text.trim() || text.trim() === "</think>";
 }
 
+function firstErrorLine(error: unknown): string | undefined {
+	if (typeof error !== "string") return undefined;
+	const line = error.split("\n").find((part) => part.trim())?.trim();
+	return line ? boundedSafeText(line, ERROR_LINE_MAX_BYTES) : undefined;
+}
+
+
+
 function childInlinePreview(child: CompletionChild): { preview?: string; truncated?: boolean; unavailableReason?: string } {
 	const output = typeof child.output === "string" ? child.output : "";
 	const outputReference = childSavedOutputPath(child);
@@ -289,6 +307,8 @@ function formatChildOutputBlock(children: SubagentNotifyChildOutput[] | undefine
 		if (child.structuredOutputPath) lines.push(`  Structured output (retention-managed): ${boundedSafeText(child.structuredOutputPath)}`);
 		if (child.outputArtifactError) lines.push(formatRetainedPathError("Output artifact", child.outputArtifactError));
 		if (child.structuredOutputError) lines.push(formatRetainedPathError("Structured output", child.structuredOutputError));
+		if (child.error) lines.push(`  Error: ${child.error}`);
+		for (const error of child.persistenceErrors ?? []) lines.push(`  Persistence error: ${error}`);
 		if (child.previewTruncated && !child.savedOutputPath && !child.outputArtifactPath) lines.push("  Full output unavailable");
 		if (index >= CHILD_OUTPUT_PREVIEW_COUNT) {
 			lines.push("  Preview: unavailable (notice preview budget exceeded)");
@@ -331,6 +351,28 @@ function formatCorrelationLines(details: SubagentNotifyDetails): string[] {
 		details.childRuns?.length ? `Child runs: ${details.childRuns.map(formatChildRun).join(", ")}` : undefined,
 		details.reconciledFromDetachedChild ? `Reconciled detached child: ${details.reconciledFromDetachedChild}` : undefined,
 	].filter((line): line is string => line !== undefined);
+}
+
+/** Producer-owned retrieval fields only; preview text must never enter this ledger. */
+function formatVerifiedCompletionMetadata(details: SubagentNotifyDetails): string[] {
+	const lines = [`Run: ${safeTerminalText(details.workflowRunId ?? details.agent)} (${safeTerminalText(details.status)})`];
+	if (details.workflowReceiptPath) lines.push(`Workflow receipt: ${safeTerminalText(details.workflowReceiptPath)}`);
+	if (details.asyncDir) lines.push(`Retention-managed async directory: ${safeTerminalText(details.asyncDir)}`);
+	if (details.workflowRunId) lines.push(`Workflow run: ${safeTerminalText(details.workflowRunId)}`);
+	if (details.handoffPath) lines.push(`Parallel handoff: ${safeTerminalText(details.handoffPath)}`);
+	const sessionLine = formatSessionLine(details);
+	if (sessionLine) lines.push(safeTerminalText(sessionLine));
+	for (const child of details.childOutputs ?? []) {
+		lines.push(`Child output: key=${safeTerminalText(child.workflowKey ?? "unavailable")} run=${safeTerminalText(child.runId ?? "unavailable")} status=${safeTerminalText(child.status) || "unavailable"}`);
+		if (child.savedOutputPath) lines.push(`Saved output: ${safeTerminalText(child.savedOutputPath)}`);
+		if (child.outputArtifactPath) lines.push(`Output artifact (retention-managed): ${safeTerminalText(child.outputArtifactPath)}`);
+		if (child.structuredOutputPath) lines.push(`Structured output (retention-managed): ${safeTerminalText(child.structuredOutputPath)}`);
+		if (child.error) lines.push(`Error: ${safeTerminalText(child.error)}`);
+		for (const error of child.persistenceErrors ?? []) lines.push(`Persistence error: ${error}`);
+		if (child.outputArtifactError) lines.push(formatRetainedPathError("Output artifact", child.outputArtifactError));
+		if (child.structuredOutputError) lines.push(formatRetainedPathError("Structured output", child.structuredOutputError));
+	}
+	return lines;
 }
 
 const WATCHDOG_BLOCKERS_HEADING = "Watchdog blockers:";
@@ -402,14 +444,15 @@ export function formatIncrementalChildCompletion(child: IncrementalChildCompleti
 			: child.outcome === "paused" ? "paused (needs attention)"
 				: "stopped";
 	const workflowStatus = child.workflowRunning ? "workflow still running" : "workflow finished";
-	return [
+	const lines = [
 		`Workflow child ${statusText}: **${child.childKey}**`,
 		`Workflow run: ${child.workflowRunId}`,
 		...(child.childRunId ? [`Child run: ${child.childRunId}`] : []),
 		...(child.outputReference ? [`Output: ${child.outputReference}`] : []),
-		...(child.error ? [`Error: ${child.error}`] : []),
+		...(child.error ? [`Error: ${truncateUtf8Head(child.error, 2_000).text}`] : []),
 		`Status: ${workflowStatus}`,
-	].join("\n");
+	];
+	return truncateUtf8Head(lines.join("\n"), 8 * 1024).text;
 }
 
 export function parseSubagentNotifyContent(content: string): SubagentNotifyDetails | undefined {
@@ -487,15 +530,44 @@ export function parseSubagentNotifyContent(content: string): SubagentNotifyDetai
 	};
 }
 
+function formatGroupedMetadata(details: SubagentNotifyDetails[]): string[] {
+	if (!details.some((detail) => detail.childRuns?.length || detail.childOutputs?.length || detail.workflowReceiptPath || detail.workflowRunId || detail.handoffPath)) return [];
+	const lines = ["Run metadata:"];
+	for (let index = 0; index < details.length; index++) {
+		const detail = details[index];
+		if (!detail) continue;
+		lines.push(`- ${index + 1}. ${boundedSafeText(detail.agent)} status=${boundedSafeText(detail.status)}`);
+		if (detail.workflowReceiptPath) lines.push(`  Workflow receipt: ${boundedSafeText(detail.workflowReceiptPath)}`);
+		if (detail.workflowRunId) lines.push(`  Workflow run: ${boundedSafeText(detail.workflowRunId)}`);
+		for (const child of detail.childRuns ?? []) {
+			lines.push(`  Child run: ${boundedSafeText(child.runId)}${child.workflowKey ? ` key=${boundedSafeText(child.workflowKey)}` : ""}${child.status ? ` status=${boundedSafeText(child.status)}` : ""}`);
+		}
+		for (const child of detail.childOutputs ?? []) {
+			const childIdentity = child.runId ? ` ${boundedSafeText(child.runId)}` : "";
+			lines.push(`  Child output${childIdentity}: status=${boundedSafeText(child.status)}`);
+			if (child.savedOutputPath) lines.push(`    Saved output: ${boundedSafeText(child.savedOutputPath)}`);
+			if (child.outputArtifactPath) lines.push(`    Output artifact: ${boundedSafeText(child.outputArtifactPath)}`);
+			if (child.structuredOutputPath) lines.push(`    Structured output: ${boundedSafeText(child.structuredOutputPath)}`);
+			if (child.error) lines.push(`    Error: ${firstErrorLine(child.error) ?? "unavailable"}`);
+			for (const error of child.persistenceErrors ?? []) lines.push(`    Persistence error: ${error}`);
+		}
+		for (const line of formatCorrelationLines(detail)) lines.push(`  ${line}`);
+		if (detail.handoffPath) lines.push(`  Parallel handoff: ${boundedSafeText(detail.handoffPath)}`);
+		const sessionLine = formatSessionLine(detail);
+		if (sessionLine) lines.push(`  ${sessionLine}`);
+	}
+	return lines;
+}
+
 export function formatGroupedCompletion(details: SubagentNotifyDetails[]): string {
 	const header = `Background tasks completed (${details.length}): ${details.map((d) => `**${d.agent}**${d.taskInfo ?? ""}`).join(", ")}`;
-	const blocks: string[] = [header, ""];
+	const metadata = formatGroupedMetadata(details);
+	const blocks: string[] = metadata.length ? [header, "", ...metadata, ""] : [header, ""];
 	for (let index = 0; index < details.length; index++) {
 		const detail = details[index];
 		if (!detail) continue;
 		const sessionLine = formatSessionLine(detail);
 		blocks.push(`${index + 1}. ${detail.agent}${detail.taskInfo ?? ""}${detail.scheduleOrigin ? ` — scheduled run from ${detail.scheduleOrigin.name ?? detail.scheduleOrigin.id} (schedule ${detail.scheduleOrigin.id})` : ""}`);
-		if (detail.workflowReceiptPath) blocks.push(`Workflow receipt: ${detail.workflowReceiptPath}`);
 		blocks.push(formatResultPreview(detail));
 		blocks.push(...formatWatchdogBlockerLines(detail));
 		if (detail.handoffPath) blocks.push(`Parallel handoff: ${detail.handoffPath}`);
@@ -615,7 +687,14 @@ const queuedWakes = wakeGlobal[queuedWakesSymbol] ?? (wakeGlobal[queuedWakesSymb
 function sendCompletion(pi: Pick<ParentWake, "sendMessage">, items: PendingCompletion[], unstartedWakes: string[]): boolean {
 	if (items.length === 0) return true;
 	const details = items.map((item) => item.details);
-	const content = details.length === 1 ? formatSingleCompletion(details[0]!) : formatGroupedCompletion(details);
+	const rawContent = details.length === 1 ? formatSingleCompletion(details[0]!) : formatGroupedCompletion(details);
+	let content: string;
+	try {
+		content = boundRetainedStatusResponse(rawContent, details.flatMap(formatVerifiedCompletionMetadata), "Full completion metadata");
+	} catch {
+		// Reject delivery rather than acknowledge an inaccessible retrieval trail.
+		return false;
+	}
 	const display = details.some((detail) => detail.source === "foreground" || detail.status !== "completed" || detail.scheduleOrigin !== undefined);
 	const triggerTurn = items.some((item) => item.triggerTurn);
 	// Pi can queue an accepted wake behind the current turn or past agent_settled.
@@ -696,9 +775,19 @@ export function buildCompletionDetails(result: CompletionNotification): Subagent
 	const directNoOutputSummary = directChild && (!directSummary
 		|| directSummary === "(no output)"
 		|| (directAgent && directSummary === `${directAgent}:\n(no output)`));
-	const resultPreview = directStructuredPreview && (directNoOutputSummary || directDegenerateSummary)
+	const outputPreview = directStructuredPreview && (directNoOutputSummary || directDegenerateSummary)
 		? `Structured output:\n${directStructuredPreview}`
-		: summary;
+		: capSummaryOutputs(summary, result.results);
+	// A failed child that produced output reports that output as its summary, so its error needs its own line.
+	const errorSources = status === "completed" ? [] : [
+		{ agent: undefined, error: result.error },
+		...(workflowRunId ? [] : result.results ?? []).filter((child) => child.success !== true).map((child) => ({ agent: child.agent, error: child.error })),
+	];
+	const errorLines = [...new Set(errorSources.flatMap(({ agent: errorAgent, error }) => {
+		const line = firstErrorLine(error);
+		return line && !outputPreview.includes(line) ? [`Error${errorAgent && (result.results?.length ?? 0) > 1 ? ` (${errorAgent})` : ""}: ${line}`] : [];
+	}))];
+	const resultPreview = errorLines.length ? `${errorLines.join("\n")}\n\n${outputPreview}` : outputPreview;
 	const childRuns = result.results?.flatMap((child) => {
 		const runId = typeof child.runId === "string" && child.runId.trim() ? child.runId.trim() : undefined;
 		const workflowKey = typeof child.workflowKey === "string" && child.workflowKey.trim() ? child.workflowKey.trim() : undefined;
@@ -710,9 +799,10 @@ export function buildCompletionDetails(result: CompletionNotification): Subagent
 			status: childStatus(child, workflowRunId ? result.state : undefined),
 		}];
 	}) ?? [];
-	const childOutputs = workflowRunId && result.results?.length
+	const childOutputs = (workflowRunId || result.results?.some((child) => childPersistenceErrors(child).length > 0)) && result.results?.length
 		? result.results.map((child) => {
 			const inline = childInlinePreview(child);
+			const persistenceErrors = childPersistenceErrors(child);
 			const workflowKey = typeof child.workflowKey === "string" && child.workflowKey.trim() ? child.workflowKey.trim() : undefined;
 			const runId = typeof child.runId === "string" && child.runId.trim() ? child.runId.trim() : undefined;
 			const savedOutputPath = childSavedOutputPath(child);
@@ -720,17 +810,21 @@ export function buildCompletionDetails(result: CompletionNotification): Subagent
 			const structuredOutput = child.stopped === true || child.timedOut === true
 				? { status: "unavailable" as const }
 				: retainedChildPath(child.structuredOutputPath, child.structuredOutput !== undefined);
+			const status = childStatus(child, result.state);
+			const error = status === "completed" || status === "running" ? undefined : firstErrorLine(child.error);
 			return {
 				...(workflowKey ? { workflowKey } : {}),
 				...(runId ? { runId } : {}),
 				...(typeof child.agent === "string" ? { agent: child.agent } : {}),
-				status: childStatus(child, result.state),
+				status,
 				...(typeof child.revival === "string" && child.revival ? { revival: child.revival } : {}),
 				...(savedOutputPath ? { savedOutputPath } : {}),
 				...(outputArtifact.status === "verified" ? { outputArtifactPath: outputArtifact.path } : {}),
 				...(structuredOutput.status === "verified" ? { structuredOutputPath: structuredOutput.path } : {}),
 				...(outputArtifact.status === "error" ? { outputArtifactError: outputArtifact.error } : {}),
 				...(structuredOutput.status === "error" ? { structuredOutputError: structuredOutput.error } : {}),
+				...(error ? { error } : {}),
+				...(persistenceErrors.length ? { persistenceErrors } : {}),
 				...(inline.preview ? { preview: inline.preview } : { preview: "" }),
 				...(inline.truncated ? { previewTruncated: true } : {}),
 				...(inline.unavailableReason ? { previewUnavailableReason: inline.unavailableReason } : {}),

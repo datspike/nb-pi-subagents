@@ -6,7 +6,7 @@ import { DIRS, type AsyncStatus, type Details, type SubagentState } from "../../
 import { updateActiveRunIndex } from "../background/active-run-index.ts";
 import { deliverStopRequest, stopInboxClosedPath } from "../background/control-channel.ts";
 import { readProcessTerminal } from "../background/process-terminal.ts";
-import { resultFilePath, resultPayloadFileForSessionRun, resultPayloadPathForSessionRun, writeAsyncResultFile } from "../background/result-files.ts";
+import { resultFilePath, resultPayloadFileForSessionRun, resultPayloadPathForSessionRun, withResultRunLease, writeAsyncResultFile } from "../background/result-files.ts";
 import { reconcileAsyncRun } from "../background/stale-run-reconciler.ts";
 import { readStatus } from "../../shared/utils.ts";
 import { isStoppableAsyncStatusStep, resolveAsyncStatusChild, stopStoppableAsyncStatusChildren, type ResolvedAsyncStatusChild } from "../shared/child-identity.ts";
@@ -115,7 +115,7 @@ function sealPausedRun(asyncDir: string, status: AsyncStatus): string | undefine
 		steps,
 	};
 	delete stoppedStatus.activityState;
-	writeAsyncResultFile(resultFilePath(DIRS.results, status.runId), stoppedResult);
+	withResultRunLease(DIRS.results, status.runId, () => writeAsyncResultFile(resultFilePath(DIRS.results, status.runId), stoppedResult));
 	writeAtomicJson(path.join(asyncDir, "status.json"), stoppedStatus);
 	updateActiveRunIndex(asyncDir, "stopped", status.toolCallId, { retryCapacityErrors: true, terminalIndexBeforeRelease: true });
 }

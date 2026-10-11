@@ -770,6 +770,82 @@ describe("result watcher", () => {
 		}
 	});
 
+	it("delivers the final result that replaced a paused result while the paused one was being delivered", async () => {
+		const resultsDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-result-watcher-replaced-"));
+		try {
+			const resultPath = path.join(resultsDir, "replaced-run.json");
+			// The runner's paused result has no tool-call id and its final result adds one; state and timestamp can match.
+			const common = { id: "replaced-run", sessionId: "session-current", completionOwnerId: COMPLETION_OWNER_ID, state: "paused", timestamp: 1_000 };
+			writePendingAsyncResultFile(resultPath, { ...common, runId: "replaced-run", summary: "paused result" });
+			const delivered: string[] = [];
+			const state = createState();
+			state.currentSessionId = "session-current";
+			const watcher = createResultWatcher({ events: { on: () => () => {}, emit() {} } }, state, resultsDir, 60_000, {
+				deliverIntercomResults: false,
+				notifier: {
+					deliver: async (result) => {
+						delivered.push(String(result.summary));
+						if (delivered.length === 1) writeAsyncResultFile(resultPath, { ...common, toolCallId: "call-a", summary: "final result" });
+						return true;
+					},
+				},
+			});
+			try {
+				watcher.primeExistingResults();
+				assert.equal(await waitForPredicate(() => delivered.includes("final result") && !fs.existsSync(resultPath)), true, `delivered: ${delivered.join(", ")}`);
+			} finally {
+				watcher.stopResultWatcher();
+			}
+			assert.deepEqual(delivered, ["paused result", "final result"]);
+		} finally {
+			fs.rmSync(resultsDir, { recursive: true, force: true });
+		}
+	});
+
+	it("delivers a final result once when its promotion is denied and the older paused result stays public", async (t) => {
+		for (const finalState of ["paused", "complete"]) {
+			const resultsDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-result-watcher-stale-public-"));
+			const resultPath = path.join(resultsDir, "stale-public.json");
+			const originalRenameSync = fsDefault.renameSync;
+			const originalError = console.error;
+			try {
+				console.error = () => {};
+				const common = { id: "stale-public", sessionId: "session-current", completionOwnerId: COMPLETION_OWNER_ID, timestamp: 1_000 };
+				writeAsyncResultFile(resultPath, { ...common, runId: "stale-public", state: "paused", summary: "paused result" });
+				t.mock.method(fsDefault, "renameSync", (source: fs.PathLike, target: fs.PathLike) => {
+					if (String(target) === resultPath) throw Object.assign(new Error("denied"), { code: "EPERM" });
+					return originalRenameSync(source, target);
+				});
+				syncBuiltinESMExports();
+				writeAsyncResultFile(resultPath, { ...common, toolCallId: "call-a", state: finalState, summary: "final result" });
+				const delivered: string[] = [];
+				let completions = 0;
+				const state = createState();
+				state.currentSessionId = "session-current";
+				const watcher = createResultWatcher({ events: { on: () => () => {}, emit(event) { if (event === SUBAGENT_ASYNC_COMPLETE_EVENT) completions += 1; } } }, state, resultsDir, 60_000, {
+					deliverIntercomResults: false,
+					notifier: { deliver: async (result) => { delivered.push(String(result.summary)); return true; } },
+				});
+				try {
+					watcher.primeExistingResults();
+					assert.equal(await waitForPredicate(() => completions > 0 && !fs.existsSync(resultPath)), true, `${finalState}: delivered ${delivered.length}`);
+					watcher.primeExistingResults();
+					await new Promise((resolve) => setTimeout(resolve, 100));
+				} finally {
+					watcher.stopResultWatcher();
+				}
+				assert.deepEqual(delivered, ["final result"], finalState);
+				assert.equal(completions, 1, finalState);
+				assert.deepEqual(fs.readdirSync(path.join(resultsDir, "result-pending"), { recursive: true }).filter((entry) => String(entry).endsWith(".json")), [], finalState);
+			} finally {
+				console.error = originalError;
+				t.mock.restoreAll();
+				syncBuiltinESMExports();
+				fs.rmSync(resultsDir, { recursive: true, force: true });
+			}
+		}
+	});
+
 	it("delivers indexed pending results during reload when public promotion is blocked", async () => {
 		const resultsDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-result-watcher-pending-index-"));
 		const originalError = console.error;
@@ -1557,6 +1633,36 @@ describe("result watcher", () => {
 		} finally {
 			fs.rmSync(resultsDir, { recursive: true, force: true });
 		}
+	});
+
+	it("keeps persistence errors visible after acknowledged async intercom delivery", async () => {
+		const root = fs.mkdtempSync(path.join(os.tmpdir(), "pi-intercom-save-errors-"));
+		const emitted: Array<{ event: string; data: any }> = [];
+		const listeners = new Map<string, Set<(data: unknown) => void>>();
+		const notices: unknown[] = [];
+		const pi = { sendMessage(message: unknown) { notices.push(message); }, events: {
+			on(event: string, handler: (data: unknown) => void) { const set = listeners.get(event) ?? new Set(); set.add(handler); listeners.set(event, set); return () => set.delete(handler); },
+			emit(event: string, data: any) { emitted.push({ event, data }); for (const handler of listeners.get(event) ?? []) handler(data); if (event === "subagent:result-intercom") setImmediate(() => pi.events.emit("subagent:result-intercom-delivery", { requestId: data.requestId, delivered: true })); },
+		} };
+		const state = createState(); state.currentSessionId = "session-1";
+		const notifier = registerSubagentNotify(pi as never, state, { batchConfig: { enabled: false } });
+		const watcher = createResultWatcher(pi, state, root, 60_000);
+		try {
+			const resultPath = path.join(root, "save-errors.json");
+			const stale = path.join(root, "stale-output.md"); fs.writeFileSync(stale, "stale");
+			writeIndexedResult(resultPath, { id: "save-errors", agent: "worker", mode: "single", success: true, state: "complete", summary: "done", sessionId: "session-1", intercomTarget: "parent", results: [{ agent: "worker", success: true, output: "completed", artifactPaths: { outputPath: stale }, artifactOutputSaveFailed: true, outputSaveError: "output persistence denied", metadataSaveError: "metadata persistence denied" }] });
+			watcher.primeExistingResults();
+			assert.equal(await waitForPredicate(() => !fs.existsSync(resultPath)), true);
+			const payload = emitted.find((entry) => entry.event === "subagent:result-intercom")?.data;
+			assert.ok(payload);
+			assert.equal(payload.children[0].artifactPath, undefined);
+			assert.match(payload.message, /Output save error: output persistence denied/);
+			assert.match(payload.message, /Metadata save error: metadata persistence denied/);
+			assert.match(payload.message, /Retention artifact save failed/);
+			assert.doesNotMatch(payload.message, /Output artifact:.*stale-output/);
+			assert.equal(emitted.find((entry) => entry.event === "subagent:async-complete")?.data.intercomDelivered, true);
+			assert.equal(notices.length, 0);
+		} finally { watcher.stopResultWatcher(); notifier.dispose(); fs.rmSync(root, { recursive: true, force: true }); }
 	});
 
 	it("does not mark completed siblings as stopped when the overall async result is stopped", async () => {
@@ -2593,4 +2699,26 @@ describe("result watcher", () => {
 		});
 	});
 
+});
+
+it("does not deliver a stale completion when the mission observer already detected its replacement", async () => {
+	const resultsDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-result-observer-replacement-"));
+	try {
+		const resultPath = path.join(resultsDir, "observer-replaced.json");
+		const common = { id: "observer-replaced", runId: "observer-replaced", sessionId: "session-current", completionOwnerId: COMPLETION_OWNER_ID, timestamp: 1_000 };
+		writePendingAsyncResultFile(resultPath, { ...common, state: "paused", summary: "old completion" });
+		const delivered: string[] = [], observed: string[] = [], completed: string[] = []; const state = createState(); state.currentSessionId = "session-current";
+		const watcher = createResultWatcher({ events: { on: () => () => {}, emit(event, data) { if (event === SUBAGENT_ASYNC_COMPLETE_EVENT) completed.push(String((data as { summary?: string }).summary)); } } }, state, resultsDir, 60_000, {
+			deliverIntercomResults: false,
+			observeCompletion(result) { observed.push(String(result.summary)); if (result.summary === "old completion") writeAsyncResultFile(resultPath, { ...common, state: "complete", toolCallId: "new-call", summary: "new completion" }); },
+			notifier: { deliver: async (result) => { delivered.push(String(result.summary)); return true; } },
+		});
+		try {
+			watcher.primeExistingResults();
+			assert.equal(await waitForPredicate(() => delivered.includes("new completion") && !fs.existsSync(resultPath)), true);
+		} finally { watcher.stopResultWatcher(); }
+		assert.deepEqual(observed, ["old completion", "new completion"]);
+		assert.deepEqual(delivered, ["new completion"], "a detected obsolete snapshot must never reach notification delivery");
+		assert.deepEqual(completed, ["new completion"], "completion delivery must use only the replacement");
+	} finally { fs.rmSync(resultsDir, { recursive: true, force: true }); }
 });

@@ -5,7 +5,7 @@ import { safeTerminalText } from "../../shared/display-text.ts";
 import { getArtifactPaths, getArtifactsDir } from "../../shared/artifacts.ts";
 import { readFleetTranscript } from "../../tui/fleet-transcript.ts";
 import { formatAsyncRunList, formatAsyncRunOutputPath, formatAsyncRunProgressLabel, formatWorkflowStageLine, listAsyncRuns } from "./async-status.ts";
-import { formatAsyncResultTranscript, formatAsyncRunTranscript, formatNestedRunTranscript, inspectSubagentFleet } from "./fleet-view.ts";
+import { appendTranscriptBody, formatAsyncResultTranscript, formatAsyncRunTranscript, formatNestedRunTranscript, inspectSubagentFleet } from "./fleet-view.ts";
 import { formatNestedRunStatusLines } from "../shared/nested-render.ts";
 import { formatModelThinking } from "../../shared/formatters.ts";
 import { formatActivityLabel } from "../../shared/status-format.ts";
@@ -35,6 +35,11 @@ import { formatWorkflowChecklistText, projectWorkflowChecklist } from "../../wor
 import { validHostStepNodes } from "../shared/host-step-status.ts";
 import { workflowAsyncChildSteeringGuidance } from "../shared/workflow-async-child-guidance.ts";
 import { formatWorkflowKeyRevival, projectWorkflowKeyRevival } from "../../workflows/workflow-revival.ts";
+import { capSummaryOutputs } from "../shared/single-output.ts";
+import { boundStatusResponse } from "../shared/status-output.ts";
+
+/** A step whose structured output has a path line needs only a short inline preview. */
+const STRUCTURED_PREVIEW_WITH_PATH_CHARS = 500;
 
 interface RunStatusParams {
 	action?: string;
@@ -314,9 +319,8 @@ function formatRememberedForegroundTranscript(run: ForegroundResumeRun, options:
 		child.savedOutputPath && child.savedOutputPath !== child.artifactPaths?.outputPath ? `Saved output: ${child.savedOutputPath}` : undefined,
 		child.outputSaveError ? `Output warning: ${child.outputSaveError}` : undefined,
 	].filter((line): line is string => Boolean(line));
-	lines.push("Result transcript tail:");
-	if (outputLines.length === 0) lines.push("  (no recovered final output available yet)");
-	else for (const line of outputLines) lines.push(`  ${line}`);
+	if (outputLines.length === 0) lines.push("Result transcript tail:", "  (no recovered final output available yet)");
+	else appendTranscriptBody(lines, "Result transcript tail", outputLines, false);
 	return lines.map((line) => safeTerminalText(line)).join("\n");
 }
 
@@ -352,7 +356,14 @@ function formatNestedExactStatus(rootRunId: string, run: NestedRunSummary): stri
 	return lines.join("\n");
 }
 
+/** Bounds transcript lookup errors without reducing the successful transcript body budget. */
 export function inspectSubagentStatus(params: RunStatusParams, deps: RunStatusDeps = {}): AgentToolResult<Details> {
+	const result = inspectSubagentStatusResult(params, deps);
+	if (params.view !== "transcript" || !result.isError) return result;
+	return { ...result, content: result.content.map((item) => item.type === "text" ? { ...item, text: boundStatusResponse(item.text) } : item) };
+}
+
+function inspectSubagentStatusResult(params: RunStatusParams, deps: RunStatusDeps): AgentToolResult<Details> {
 	const asyncDirRoot = deps.asyncDirRoot ?? DIRS.async;
 	const resultsDir = deps.resultsDir ?? DIRS.results;
 	const currentSessionId = deps.state?.currentSessionId ?? undefined;
@@ -392,7 +403,7 @@ export function inspectSubagentStatus(params: RunStatusParams, deps: RunStatusDe
 			}
 			const waitSubscriptions = deps.state ? formatWaitSubscriptions(deps.state, deps.now?.() ?? Date.now()) : undefined;
 			return {
-				content: [{ type: "text", text: [formatAsyncRunList(runs), waitSubscriptions].filter(Boolean).join("\n\n") }],
+				content: [{ type: "text", text: boundStatusResponse([formatAsyncRunList(runs), waitSubscriptions].filter(Boolean).join("\n\n")) }],
 				details: { mode: "single", results: [] },
 			};
 		} catch (error) {
@@ -424,7 +435,7 @@ export function inspectSubagentStatus(params: RunStatusParams, deps: RunStatusDe
 				if (run) {
 					try {
 						return {
-							content: [{ type: "text", text: params.view === "transcript" ? formatRememberedForegroundTranscript(run, { index: params.index, lines: params.lines }) : formatRememberedForegroundStatus(run) }],
+							content: [{ type: "text", text: params.view === "transcript" ? formatRememberedForegroundTranscript(run, { index: params.index, lines: params.lines }) : boundStatusResponse(formatRememberedForegroundStatus(run)) }],
 							details: { mode: "single", results: [] },
 						};
 					} catch (error) {
@@ -445,7 +456,7 @@ export function inspectSubagentStatus(params: RunStatusParams, deps: RunStatusDe
 						return { content: [{ type: "text", text: message }], isError: true, details: { mode: "single", results: [] } };
 					}
 				}
-				return { content: [{ type: "text", text: formatNestedExactStatus(nested.match.rootRunId, nested.match.run) }], details: { mode: "single", results: [] } };
+				return { content: [{ type: "text", text: boundStatusResponse(formatNestedExactStatus(nested.match.rootRunId, nested.match.run)) }], details: { mode: "single", results: [] } };
 			}
 			if (resolved?.kind === "async") location = resolved.location;
 			else location = { asyncDir: null, resultPath: null, resolvedId: requestedId };
@@ -640,7 +651,7 @@ export function inspectSubagentStatus(params: RunStatusParams, deps: RunStatusDe
 					const revival = projectWorkflowKeyRevival(asyncDirRoot, status.runId, step.workflowKey, step.runId);
 					if (revival) lines.push(`  ${formatWorkflowKeyRevival(revival)}`);
 				}
-				const structuredOutputPreview = step.structuredOutput === undefined ? undefined : formatWorkflowJsonPreview(step.structuredOutput, 4_000);
+				const structuredOutputPreview = step.structuredOutput === undefined ? undefined : formatWorkflowJsonPreview(step.structuredOutput, step.structuredOutputPath ? STRUCTURED_PREVIEW_WITH_PATH_CHARS : 4_000);
 				if (structuredOutputPreview !== undefined) lines.push(`  Structured output: ${structuredOutputPreview}`);
 				if (step.structuredOutputPath) lines.push(`  Structured output path: ${step.structuredOutputPath}`);
 				lines.push(...formatTimeoutRecoveryLines(step.timeoutRecovery, "  "));
@@ -719,7 +730,7 @@ export function inspectSubagentStatus(params: RunStatusParams, deps: RunStatusDe
 			if (fs.existsSync(logPath)) lines.push(`Log: ${logPath}`);
 			if (fs.existsSync(eventsPath)) lines.push(`Events: ${eventsPath}`);
 
-			return { content: [{ type: "text", text: lines.join("\n") }], details: { mode: "single", results: [], ...(status.workflowReceiptPath ? { workflowReceiptPath: status.workflowReceiptPath } : {}), ...(status.preflight ? { preflight: status.preflight } : {}), ...(status.workflow?.preflightWarnings?.length ? { preflightWarnings: status.workflow.preflightWarnings } : {}), ...(workflowChildren ? { workflowChildren } : {}), ...(workflowTerminalProof ? { workflowTerminalProof } : {}), ...(runFanoutBudget ? { runFanoutBudget } : {}), ...(processTerminal ? { lifecycleStatus: { processTerminal } } : {}) } };
+			return { content: [{ type: "text", text: boundStatusResponse(lines) }], details: { mode: "single", results: [], ...(status.workflowReceiptPath ? { workflowReceiptPath: status.workflowReceiptPath } : {}), ...(status.preflight ? { preflight: status.preflight } : {}), ...(status.workflow?.preflightWarnings?.length ? { preflightWarnings: status.workflow.preflightWarnings } : {}), ...(workflowChildren ? { workflowChildren } : {}), ...(workflowTerminalProof ? { workflowTerminalProof } : {}), ...(runFanoutBudget ? { runFanoutBudget } : {}), ...(processTerminal ? { lifecycleStatus: { processTerminal } } : {}) } };
 		}
 	}
 
@@ -733,7 +744,7 @@ export function inspectSubagentStatus(params: RunStatusParams, deps: RunStatusDe
 		}
 		try {
 			const raw = fs.readFileSync(resultPath, "utf-8");
-			const data = JSON.parse(raw) as { id?: string; runId?: string; toolCallId?: string; agent?: string; success?: boolean; summary?: string; output?: string; exitCode?: number; state?: string; stopped?: boolean; timedOut?: boolean; turnBudgetExceeded?: boolean; processSignal?: string | null; sessionFile?: string; timeoutRecovery?: unknown; parallelHandoff?: { path?: string }; results?: Array<{ agent?: string; sessionName?: string; runId?: string; workflowKey?: string; output?: string; summary?: string; sessionFile?: string; state?: string; success?: boolean; exitCode?: number | null; stopped?: boolean; timedOut?: boolean; turnBudgetExceeded?: boolean; interrupted?: boolean; processSignal?: string | null; timeoutRecovery?: unknown }> };
+			const data = JSON.parse(raw) as { id?: string; runId?: string; toolCallId?: string; agent?: string; success?: boolean; summary?: string; output?: string; exitCode?: number; state?: string; stopped?: boolean; timedOut?: boolean; turnBudgetExceeded?: boolean; processSignal?: string | null; sessionFile?: string; timeoutRecovery?: unknown; parallelHandoff?: { path?: string }; results?: Array<{ agent?: string; sessionName?: string; runId?: string; workflowKey?: string; output?: string; summary?: string; sessionFile?: string; state?: string; success?: boolean; exitCode?: number | null; stopped?: boolean; timedOut?: boolean; turnBudgetExceeded?: boolean; interrupted?: boolean; processSignal?: string | null; timeoutRecovery?: unknown; savedOutputPath?: string; artifactPaths?: { outputPath?: string } }> };
 			if (params.view === "transcript") {
 				try {
 					return { content: [{ type: "text", text: formatAsyncResultTranscript(data, resultPath, { index: params.index, lines: params.lines }) }], details: { mode: "single", results: [] } };
@@ -769,17 +780,18 @@ export function inspectSubagentStatus(params: RunStatusParams, deps: RunStatusDe
 			lines.push(...formatTimeoutRecoveryLines(data.timeoutRecovery, "  "));
 			for (const [index, child] of children.entries()) {
 				const structuredOutput = (child as { structuredOutput?: unknown }).structuredOutput;
-				const structuredOutputPreview = structuredOutput === undefined ? undefined : formatWorkflowJsonPreview(structuredOutput, 4_000);
-				if (structuredOutputPreview !== undefined) lines.push(`  Structured output${children.length > 1 ? ` (${index + 1})` : ""}: ${structuredOutputPreview}`);
 				const structuredOutputPath = (child as { structuredOutputPath?: unknown }).structuredOutputPath;
-				if (typeof structuredOutputPath === "string" && structuredOutputPath.trim()) lines.push(`  Structured output path${children.length > 1 ? ` (${index + 1})` : ""}: ${structuredOutputPath}`);
+				const hasStructuredOutputPath = typeof structuredOutputPath === "string" && structuredOutputPath.trim() !== "";
+				const structuredOutputPreview = structuredOutput === undefined ? undefined : formatWorkflowJsonPreview(structuredOutput, hasStructuredOutputPath ? STRUCTURED_PREVIEW_WITH_PATH_CHARS : 4_000);
+				if (structuredOutputPreview !== undefined) lines.push(`  Structured output${children.length > 1 ? ` (${index + 1})` : ""}: ${structuredOutputPreview}`);
+				if (hasStructuredOutputPath) lines.push(`  Structured output path${children.length > 1 ? ` (${index + 1})` : ""}: ${structuredOutputPath}`);
 				lines.push(...formatTimeoutRecoveryLines(child.timeoutRecovery, "  "));
 			}
 			lines.push(formatResumeGuidance(runId, children, data.sessionFile, { stopped: status === "stopped" }));
-			if (data.summary) lines.push("", data.summary);
+			if (data.summary) lines.push("", capSummaryOutputs(data.summary, data.results));
 			const workflowChildren = parseWorkflowChildSummary((data as unknown as Record<string, unknown>).workflowChildren);
 			if (workflowChildren && workflowChildren.workflowRunId !== runId) throw new Error("workflowChildren.workflowRunId does not match the result run id.");
-			return { content: [{ type: "text", text: lines.join("\n") }], details: { mode: "single", results: [], ...(workflowReceiptPath ? { workflowReceiptPath } : {}), ...(workflowChildren ? { workflowChildren } : {}) } };
+			return { content: [{ type: "text", text: boundStatusResponse(lines) }], details: { mode: "single", results: [], ...(workflowReceiptPath ? { workflowReceiptPath } : {}), ...(workflowChildren ? { workflowChildren } : {}) } };
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
 			return {

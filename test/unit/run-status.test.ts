@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import mutableFs from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -12,6 +14,7 @@ import { createNestedRoute, writeNestedEvent } from "../../src/runs/shared/neste
 import { claimRunFanoutBatch, createRunFanoutBudget, writeRunFanoutBudgetDescriptor } from "../../src/runs/shared/run-fanout-budget.ts";
 import { TEMP_ROOT_DIR, type AsyncStatus, type SubagentState } from "../../src/shared/types.ts";
 import { getArtifactPaths, getArtifactsDir } from "../../src/shared/artifacts.ts";
+import { finalizeSingleOutput } from "../../src/runs/shared/single-output.ts";
 
 function errno(code: string): NodeJS.ErrnoException {
 	const error = new Error(code) as NodeJS.ErrnoException;
@@ -75,6 +78,16 @@ describe("async run status inspection", () => {
 			assert.match(text, /Warnings:\n  Skipped 1 malformed session tail line/);
 			assert.equal(fs.readFileSync(sessionFile, "utf8"), stored);
 		} finally { fs.rmSync(root, { recursive: true, force: true }); }
+	});
+
+	for (const value of ["x", "世界😀"]) it(`bounds a direct transcript mismatch error (multibyte=${value !== "x"})`, () => {
+		const asyncDirRoot = path.join(os.tmpdir(), "pi-transcript-mismatch-root");
+		const result = inspectSubagentStatus({ id: "missing-transcript-run", dir: path.join(asyncDirRoot, value.repeat(50000)), view: "transcript" }, { asyncDirRoot });
+		assert.equal(result.isError, true);
+		const text = textContent(result);
+		assert.ok(Buffer.byteLength(text, "utf8") <= 16384, `${Buffer.byteLength(text)} bytes`);
+		assert.match(text, /does not match|Unable to resolve|No run found/);
+		assert.doesNotMatch(text, /\uFFFD/u);
 	});
 
 	for (const source of ["output", "recent", "result", "nested"] as const) {
@@ -874,6 +887,42 @@ describe("async run status inspection", () => {
 			assert.match(text, /transcript: subagent\(\{ action: "status", id: "run-fleet", view: "transcript" \}\)/);
 			assert.match(text, /transcript: subagent\(\{ action: "status", id: "run-fleet", index: 0, view: "transcript" \}\)/);
 		} finally {
+			fs.rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	it("bounds a large fleet and retains all run identities and status commands", (t) => {
+		const root = fs.mkdtempSync(path.join(os.tmpdir(), "pi-fleet-large-"));
+		let file: string | undefined;
+		try {
+			const controls = Array.from({ length: 100 }, (_, index) => ({ runId: `foreground-${index}`, mode: "single", startedAt: 100, updatedAt: 200, currentAgent: "worker", sessionName: "é".repeat(100) }));
+			const state = { foregroundControls: new Map(controls.map((control) => [control.runId, control])) } as unknown as SubagentState;
+			t.mock.method(mutableFs, "writeFileSync", () => { throw errno("EROFS"); });
+			syncBuiltinESMExports();
+			const rejected = inspectSubagentStatus({ view: "fleet" }, { state, asyncDirRoot: path.join(root, "runs"), resultsDir: path.join(root, "results") });
+			assert.equal(rejected.isError, true);
+			assert.match(textContent(rejected), /full retrieval metadata could not be retained/);
+			assert.ok(Buffer.byteLength(textContent(rejected), "utf8") <= 16384);
+			t.mock.restoreAll();
+			syncBuiltinESMExports();
+			const result = inspectSubagentStatus({ view: "fleet" }, { state, asyncDirRoot: path.join(root, "runs"), resultsDir: path.join(root, "results") });
+			const text = textContent(result);
+			assert.equal(result.isError, undefined);
+			assert.ok(Buffer.byteLength(text, "utf8") <= 16384);
+			assert.match(text, /Subagent fleet: 100 tracked/);
+			assert.match(text, /Status output truncated/);
+			file = text.match(/Full response metadata: ([^\n]+)/)?.[1];
+			assert.ok(file);
+			const ledger = (JSON.parse(fs.readFileSync(file, "utf8")) as { verifiedMetadata: string[] }).verifiedMetadata.join("\n");
+			for (const control of controls) {
+				assert.ok(ledger.includes(`Run: ${control.runId} | State: running`));
+				assert.ok(ledger.includes(`Status: subagent({ action: "status", id: "${control.runId}" })`));
+			}
+			assert.ok(!ledger.includes("é".repeat(100)));
+		} finally {
+			t.mock.restoreAll();
+			syncBuiltinESMExports();
+			if (file) fs.rmSync(file, { force: true });
 			fs.rmSync(root, { recursive: true, force: true });
 		}
 	});
@@ -1923,6 +1972,65 @@ describe("async run status inspection", () => {
 			assert.match(text, /changed tracked files: input\.md/);
 			assert.match(text, /Structured output: \{"payload":\{"ok":true\}\}/);
 			assert.match(text, /Structured output path: \/runs\/structured-output\/output\.json/);
+		} finally {
+			fs.rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	it("shows the head of a long completed result summary and the file that holds all of it", () => {
+		const root = fs.mkdtempSync(path.join(os.tmpdir(), "pi-run-status-result-head-"));
+		try {
+			const asyncRoot = path.join(root, "runs");
+			const resultsDir = path.join(root, "results");
+			fs.mkdirSync(path.join(asyncRoot, "run-long-result"), { recursive: true });
+			fs.mkdirSync(resultsDir, { recursive: true });
+			const output = Array.from({ length: 200 }, (_, index) => `result line ${index} ${"x".repeat(40)}`).join("\n");
+			const artifact = path.join(root, "worker_output.md");
+			fs.writeFileSync(artifact, output);
+			fs.writeFileSync(path.join(resultsDir, "run-long-result.json"), JSON.stringify({
+				id: "run-long-result",
+				agent: "worker",
+				success: true,
+				state: "complete",
+				summary: `worker:\n${output}`,
+				results: [{ agent: "worker", success: true, output, artifactPaths: { outputPath: artifact } }],
+			}), "utf-8");
+
+			const text = textContent(inspectSubagentStatus({ id: "run-long-result" }, { asyncDirRoot: asyncRoot, resultsDir }));
+			assert.ok(text.includes(output.slice(0, 1_500)));
+			assert.ok(!text.includes("result line 199"));
+			assert.match(text, /Full output: .*worker_output\.md \(\d+\.\d KB, 200 lines\)\. Read it if needed\./);
+		} finally {
+			fs.rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	it("caps a long completed result saved to an explicit output file and keeps the saved-file line", () => {
+		const root = fs.mkdtempSync(path.join(os.tmpdir(), "pi-run-status-result-saved-"));
+		try {
+			const asyncRoot = path.join(root, "runs");
+			const resultsDir = path.join(root, "results");
+			fs.mkdirSync(path.join(asyncRoot, "run-saved-result"), { recursive: true });
+			fs.mkdirSync(resultsDir, { recursive: true });
+			const output = Array.from({ length: 200 }, (_, index) => `saved line ${index} ${"x".repeat(40)}`).join("\n");
+			const savedPath = path.join(root, "report.md");
+			const artifact = path.join(root, "worker_output.md");
+			fs.writeFileSync(savedPath, output);
+			fs.writeFileSync(artifact, output);
+			const { displayOutput } = finalizeSingleOutput({ fullOutput: output, outputPath: savedPath, exitCode: 0, savedPath });
+			fs.writeFileSync(path.join(resultsDir, "run-saved-result.json"), JSON.stringify({
+				id: "run-saved-result",
+				agent: "worker",
+				success: true,
+				state: "complete",
+				summary: `worker:\n${displayOutput}`,
+				results: [{ agent: "worker", success: true, output: displayOutput, savedOutputPath: savedPath, artifactPaths: { outputPath: artifact } }],
+			}), "utf-8");
+
+			const text = textContent(inspectSubagentStatus({ id: "run-saved-result" }, { asyncDirRoot: asyncRoot, resultsDir }));
+			assert.ok(text.includes(output.slice(0, 1_500)));
+			assert.ok(!text.includes("saved line 199"), `expected a capped status, got ${text.length} chars`);
+			assert.match(text, /\nOutput saved to: .*report\.md \(\d+\.\d KB, 200 lines\)\. Read this file if needed\./);
 		} finally {
 			fs.rmSync(root, { recursive: true, force: true });
 		}

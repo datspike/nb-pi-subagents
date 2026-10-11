@@ -107,12 +107,12 @@ const extractExecutionFlags = (rawArgs: string): { args: string; bg: boolean; fo
 	return { args, bg, fork };
 };
 
-function discoverSlashAgents(pi: ExtensionAPI, cwd: string, scope: AgentScope): { agents: AgentConfig[]; agentDiagnostics?: AgentDiscoveryDiagnostic[]; unknownAgentDiagnosticContext: UnknownAgentDiagnosticContext } {
+function discoverSlashAgents(pi: ExtensionAPI, cwd: string, scope: AgentScope, projectTrusted?: boolean): { agents: AgentConfig[]; agentDiagnostics?: AgentDiscoveryDiagnostic[]; unknownAgentDiagnosticContext: UnknownAgentDiagnosticContext } {
 	if (listRuntimeAgentConfigs(pi).length === 0) {
-		const discovered = discoverAgents(cwd, scope);
+		const discovered = discoverAgents(cwd, scope, undefined, { projectTrusted });
 		return { ...discovered, unknownAgentDiagnosticContext: unknownAgentDiagnosticContext(discovered) };
 	}
-	const snapshot = discoverAgentSnapshot(cwd, scope, undefined, { includeChains: false });
+	const snapshot = discoverAgentSnapshot(cwd, scope, undefined, { includeChains: false, projectTrusted });
 	const discovered = snapshot.effective;
 	const all = snapshot.all;
 	const configuredAgents: AgentConfig[] = [
@@ -121,16 +121,18 @@ function discoverSlashAgents(pi: ExtensionAPI, cwd: string, scope: AgentScope): 
 		...(scope !== "project" ? all.user : []),
 		...(scope !== "user" ? all.project : []),
 	];
-	const merged = mergeRuntimeAgents(pi, discovered, configuredAgents, { cwd, scope });
+	const merged = mergeRuntimeAgents(pi, discovered, configuredAgents, { cwd, scope, projectTrusted });
 	return { ...merged, unknownAgentDiagnosticContext: { ...unknownAgentDiagnosticContext(discovered), agents: merged.agents } };
 }
 
 const makeAgentCompletions = (pi: ExtensionAPI, state: SubagentState) => (prefix: string) => {
 	if (!state.baseCwd || prefix.includes(" ")) return null;
-	return discoverSlashAgents(pi, state.baseCwd, "both").agents
+	const projectTrusted = typeof state.lastUiContext?.isProjectTrusted === "function" ? state.lastUiContext.isProjectTrusted() : undefined;
+	return discoverSlashAgents(pi, state.baseCwd, "both", projectTrusted).agents
 		.filter((agent) => agent.name.startsWith(prefix))
 		.map((agent) => ({ value: agent.name, label: agent.name }));
 };
+
 
 const makeProviderCompletions = (state: SubagentState) => (prefix: string) => {
 	if (prefix.includes(" ")) return null;
@@ -656,7 +658,7 @@ export function registerSlashCommands(
 			const task = firstSpace === -1 ? "" : input.slice(firstSpace + 1).trim();
 
 			if (!state.baseCwd) { ctx.ui.notify("Subagent session cwd is not initialized yet", "error"); return; }
-			const discovered = discoverSlashAgents(pi, state.baseCwd, "both");
+			const discovered = discoverSlashAgents(pi, state.baseCwd, "both", typeof ctx.isProjectTrusted === "function" ? ctx.isProjectTrusted() : undefined);
 			const resolvedAgent = resolveAgentName(agentName, discovered.agents);
 			const candidates = resolvedAgent.error
 				? discovered.agents.filter((agent) => resolveAgentName(agentName, [agent]).agent)

@@ -1,3 +1,5 @@
+import mutableFs from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
@@ -273,6 +275,36 @@ describe("intercom result delivery cutover", { skip: !available ? "executor not 
 		assert.doesNotMatch(result.content[0]?.text ?? "", /Full child output from worker/);
 		assert.equal(result.details?.results?.[0]?.finalOutput, undefined);
 		assert.match(String(payload.message ?? ""), /Full child output from worker/);
+	});
+
+	for (const failMetadata of [false, true]) for (const withSavedOutput of [false, true]) it(`acknowledges foreground intercom delivery without advertising failed artifact saves (saved=${withSavedOutput}, metaFailure=${failMetadata})`, async (t) => {
+		mockPi.onCall({ output: "completed output" });
+		const original = mutableFs.writeFileSync;
+		t.mock.method(mutableFs, "writeFileSync", (...args: Parameters<typeof mutableFs.writeFileSync>) => {
+			if (String(args[0]).endsWith("_output.md")) { original(args[0], "partial artifact"); throw Object.assign(new Error("artifact disk denied"), { code: "EACCES" }); }
+			if (failMetadata && String(args[0]).includes("_meta.json")) throw Object.assign(new Error("artifact disk denied"), { code: "EACCES" });
+			return original(...args);
+		});
+		syncBuiltinESMExports();
+		try {
+			const { executor, events } = makeExecutor({ resultDelivery: true });
+			const result = await executor.execute("intercom-save-failure", { agent: "worker", task: "complete task", ...(withSavedOutput ? { output: path.join(tempDir, "saved.md") } : {}) }, new AbortController().signal, undefined, makeMinimalCtx(tempDir));
+			const payload = events.emitted.find((entry) => entry.channel === "subagent:result-intercom")?.payload as { message: string; children: Array<{ artifactPath?: string }> };
+			assert.ok(payload);
+			assert.equal(payload.children[0]?.artifactPath, undefined);
+			assert.match(payload.message, /Output save error:.*artifact disk denied/i);
+			if (failMetadata) assert.match(payload.message, /Metadata save error:.*artifact disk denied/i);
+			else {
+				const paths = result.details.results?.[0]?.artifactPaths;
+				assert.equal(paths?.outputPath, "");
+				assert.ok(paths?.metadataPath && mutableFs.statSync(paths.metadataPath).isFile());
+				assert.ok(paths?.inputPath && mutableFs.statSync(paths.inputPath).isFile());
+				assert.doesNotMatch(payload.message, /Metadata save error:/);
+			}
+			if (withSavedOutput) { assert.ok(payload.message.includes(`Saved output: ${path.join(tempDir, "saved.md")}`)); assert.match(mutableFs.readFileSync(path.join(tempDir, "saved.md"), "utf8"), /completed output/); }
+			assert.match(result.content[0]?.text ?? "", /Delivered single subagent result via intercom/);
+			assert.match(result.content[0]?.text ?? "", /save error.*artifact disk denied/i);
+		} finally { t.mock.restoreAll(); syncBuiltinESMExports(); }
 	});
 
 	it("keeps child output available to workflow runs after grouped delivery", async () => {
@@ -1119,7 +1151,7 @@ describe("intercom result delivery cutover", { skip: !available ? "executor not 
 
 			assert.equal(result.isError, undefined);
 			assert.match(result.content[0]?.text ?? "", /Revived async subagent from/);
-			assert.match(result.content[0]?.text ?? "", /Do not sleep or poll/);
+			assert.match(result.content[0]?.text ?? "", /Do not run sleep timers or polling loops/);
 			assert.match(result.content[0]?.text ?? "", /Use bg_wait only/);
 			assert.match(result.content[0]?.text ?? "", /Status if needed: subagent\(\{ action: "status"/);
 			assert.doesNotMatch(result.content[0]?.text ?? "", /Follow:/);

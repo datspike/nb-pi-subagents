@@ -129,15 +129,17 @@ describe("async runner execution", () => {
 
 	it("formats interactive yield and headless auto-drain guidance separately", () => {
 		const interactive = formatAsyncStartedMessage("Async: worker [interactive]", true);
-		assert.match(interactive, /End your turn now: Pi wakes this session when it completes or needs attention/i);
-		assert.match(interactive, /Do not sleep, poll or call bg_wait for it/i);
-		assert.match(interactive, /bg_wait is only for work with no completion notification/i);
+		assert.match(interactive, /^Async: worker \[interactive\]\n/);
+		assert.match(interactive, /Return control now: native completion wakes you, so do not sleep, poll, or call bg_wait for it\./);
+		assert.match(interactive, /subagent\(\{ action: "status", id: "\.\.\." \}\)/);
+		assert.ok(interactive.length <= 400, `interactive receipt is ${interactive.length} chars`);
 		assert.doesNotMatch(interactive, /bg_wait\(\{ id:/i);
 		assert.doesNotMatch(interactive, /auto-drains current-session background work/i);
 
 		const headless = formatAsyncStartedMessage("Async: worker [headless]", false);
-		assert.match(headless, /non-interactive run.*auto-drains current-session subagent work at agent_end.*Do not sleep or poll/i);
-		assert.match(headless, /Use bg_wait only.*provider, detached, or other background work with no native completion notification/i);
+		assert.match(headless, /non-interactive run.*auto-drains current-session subagent work at agent_end/i);
+		assert.match(headless, /use bg_wait only for results this turn needs from work without native notification/i);
+		assert.equal(headless.split("\n").length, 3);
 		assert.doesNotMatch(headless, /nonBlocking: true/);
 		assert.doesNotMatch(headless, /By default, return control to the user/i);
 	});

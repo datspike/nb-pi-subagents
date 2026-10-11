@@ -86,7 +86,7 @@ export async function withHerdrPaneAllocationLock<T>(key: string, action: () => 
 	} finally { try { fs.unlinkSync(tempPath); } catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; } }
 }
 
-export function serializeHerdrPiLaunch(launch: ChildSessionLaunch): { args: string[]; resources: { agent: string; skills?: string[]; toolCeiling?: string[]; reads?: string[] | false } } {
+export function serializeHerdrPiLaunch(launch: ChildSessionLaunch): { args: string[]; resources: { agent: string; skills?: string[]; toolCeiling?: string[]; reads?: string[] | false; projectTrusted?: boolean } } {
 	if (launch.storage.kind === "file") throw new Error("Pane-native remote Pi does not support fork, resume, or revival; use fresh context.");
 	if (launch.extensionPaths.length || launch.requiredExtensions?.length) throw new Error("Pane-native remote Pi cannot transfer local extension paths; install/configure pi-subagents on the remote machine.");
 	if (launch.processEnv && Object.values(launch.processEnv).some((value) => value !== undefined && value !== "__none__")) throw new Error("Pane-native remote Pi cannot transfer local bindings, MCP selections, or process environment.");
@@ -98,7 +98,7 @@ export function serializeHerdrPiLaunch(launch: ChildSessionLaunch): { args: stri
 	if (launch.noSkills) args.push("--no-skills", "--no-prompt-templates");
 	if (launch.noContextFiles) args.push("--no-context-files");
 	if (launch.model) args.push("--model", launch.model);
-	return { args, resources: { agent: resources.agent, ...(resources.skills ? { skills: [...resources.skills] } : {}), ...(resources.toolCeiling ? { toolCeiling: [...resources.toolCeiling] } : {}), ...(resources.reads !== undefined ? { reads: resources.reads === false ? false : [...resources.reads] } : {}) } };
+	return { args, resources: { agent: resources.agent, ...(launch.projectTrusted !== undefined ? { projectTrusted: launch.projectTrusted } : {}), ...(resources.skills ? { skills: [...resources.skills] } : {}), ...(resources.toolCeiling ? { toolCeiling: [...resources.toolCeiling] } : {}), ...(resources.reads !== undefined ? { reads: resources.reads === false ? false : [...resources.reads] } : {}) } };
 }
 
 export async function provisionHerdrPane(client: HerdrRpcClient, cwd: string, runId: string, runtimeDir: string, environment?: Record<string, string>, allocationKey = cwd): Promise<{ workspaceId: string; tabId: string; paneId: string }> {
@@ -172,7 +172,7 @@ export class BridgeChannel {
 	fail(error: Error) { if (this.#failed) return; this.#failed = true; this.#rejectFailure(error); for (const waiter of this.waiters.values()) waiter.reject(error); this.waiters.clear(); }
 	get failed() { return this.#failed; }
 	wait(type: string, requestId: string): Promise<HerdrPiFrame> { return new Promise((resolve, reject) => this.waiters.set(`${type}:${requestId}`, { resolve, reject })); }
-	configure(resources: { agent: string; skills?: string[]; toolCeiling?: string[]; reads?: string[] | false }) { const requestId = `cfg_${randomBytes(6).toString("hex")}`; const waiting = this.wait("configured", requestId); this.socket.write(encodeHerdrPiFrame({ protocol: HERDR_PI_PROTOCOL, runId: this.runId, type: "configure", requestId, resources })); return waiting; }
+	configure(resources: { agent: string; skills?: string[]; toolCeiling?: string[]; reads?: string[] | false; projectTrusted?: boolean }) { const requestId = `cfg_${randomBytes(6).toString("hex")}`; const waiting = this.wait("configured", requestId); this.socket.write(encodeHerdrPiFrame({ protocol: HERDR_PI_PROTOCOL, runId: this.runId, type: "configure", requestId, resources })); return waiting.then((frame) => { if (typeof frame.error === "string") throw new Error(frame.error); if (resources.projectTrusted !== undefined && frame.projectTrusted !== resources.projectTrusted) throw new Error("Remote Pi project trust acknowledgement mismatch or unsupported policy."); return frame; }); }
 	supervisorDelivered(requestId: string) { this.socket.write(encodeHerdrPiFrame({ protocol: HERDR_PI_PROTOCOL, runId: this.runId, type: "supervisor-delivered", requestId })); }
 	prepare(requestId: string, operation: string, text?: string, supervisorId?: string) { const waiting = this.wait("prepared", requestId); this.socket.write(encodeHerdrPiFrame({ protocol: HERDR_PI_PROTOCOL, runId: this.runId, type: "prepare", requestId, operation, ...(text !== undefined ? { text } : {}), ...(supervisorId ? { supervisorId } : {}) })); return waiting; }
 	close() { this.socket.destroy(); }

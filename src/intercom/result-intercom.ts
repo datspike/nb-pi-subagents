@@ -1,3 +1,4 @@
+import { singleLineResultMetadata } from "../runs/shared/result-persistence.ts";
 import { randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import { isUnexplainedProcessSignal } from "../runs/shared/process-signal.ts";
@@ -16,6 +17,8 @@ import {
 	SUBAGENT_RESULT_INTERCOM_DELIVERY_EVENT,
 	SUBAGENT_RESULT_INTERCOM_EVENT,
 } from "../shared/types.ts";
+import { boundRetainedStatusResponse } from "../runs/shared/status-output.ts";
+import { safeTerminalText } from "../shared/display-text.ts";
 
 export function resolveSubagentResultStatus(input: {
 	exitCode?: number;
@@ -205,6 +208,8 @@ function formatNestedResultLines(children: PublicNestedRunSummary[] | undefined)
 }
 
 interface GroupedResultIntercomMessageInput {
+	/** Producer-owned save failures and recovery references; not a new payload field. */
+	resultMetadata?: string[];
 	to: string;
 	runId: string;
 	mode: SubagentRunMode;
@@ -234,6 +239,7 @@ function asyncResumeGuidance(input: {
 }
 
 function formatSubagentResultIntercomMessage(input: {
+	resultMetadata?: string[];
 	runId: string;
 	mode: SubagentRunMode;
 	status: SubagentResultStatus;
@@ -273,6 +279,7 @@ function formatSubagentResultIntercomMessage(input: {
 			: "Intercom targets below identify child sessions used while they were running; completed child sessions may no longer be reachable. Inspect artifacts or session logs for follow-up.");
 	}
 
+	if (input.resultMetadata?.length) lines.push("Result metadata:", ...input.resultMetadata.map(singleLineResultMetadata));
 	for (let index = 0; index < input.children.length; index++) {
 		const child = input.children[index]!;
 		lines.push("");
@@ -285,7 +292,19 @@ function formatSubagentResultIntercomMessage(input: {
 		lines.push(child.summary);
 	}
 
-	return lines.join("\n");
+	const metadata = [`Run: ${input.runId}`, `Process status: ${input.status}`, `Children: ${formatStatusCounts(counts)}`];
+	metadata.push(...(input.resultMetadata ?? []).map(singleLineResultMetadata));
+	if (input.asyncId) metadata.push(`Async id: ${input.asyncId}`);
+	if (input.asyncDir) metadata.push(`Async dir: ${input.asyncDir}`);
+	if (input.parallelHandoff) metadata.push(`Parallel handoff: ${input.parallelHandoff.path}`);
+	for (const [index, child] of input.children.entries()) {
+		metadata.push(`${index + 1}. ${child.agent} — process ${child.status} · output ${child.outputState ?? "unknown"}`);
+		if (child.intercomTarget) metadata.push(`Run intercom target: ${child.intercomTarget}`);
+		if (child.artifactPath) metadata.push(`Output artifact: ${child.artifactPath}`);
+		if (child.sessionPath) metadata.push(`Session: ${child.sessionPath}`);
+		metadata.push(...formatNestedResultLines(child.children));
+	}
+	return boundRetainedStatusResponse(lines.join("\n"), metadata.map(safeTerminalText));
 }
 
 export function buildSubagentResultIntercomPayload(input: GroupedResultIntercomMessageInput): SubagentResultIntercomPayload {
@@ -304,7 +323,7 @@ export function buildSubagentResultIntercomPayload(input: GroupedResultIntercomM
 		runId: input.runId,
 		mode: input.mode,
 		status,
-		summary,
+		summary: [summary, ...(input.resultMetadata ?? []).map(singleLineResultMetadata)].join("\n"),
 		source: input.source,
 		children,
 		...(input.asyncId ? { asyncId: input.asyncId } : {}),
@@ -317,7 +336,7 @@ export function buildSubagentResultIntercomPayload(input: GroupedResultIntercomM
 		...(firstChild?.sessionPath ? { sessionPath: firstChild.sessionPath } : {}),
 		message: "",
 	};
-	payload.message = formatSubagentResultIntercomMessage(payload);
+	payload.message = formatSubagentResultIntercomMessage({ ...payload, resultMetadata: input.resultMetadata });
 	return payload;
 }
 
@@ -397,6 +416,7 @@ export function formatSubagentResultReceipt(input: {
 		`Children: ${formatStatusCounts(counts)}`,
 	];
 
+	if (input.payload.summary !== formatStatusCounts(counts)) lines.push(`Process result summary: ${input.payload.summary}`);
 	if (input.payload.parallelHandoff) lines.push(`Parallel handoff: ${input.payload.parallelHandoff.path}`);
 
 	const artifacts = input.payload.children.filter((child) => typeof child.artifactPath === "string");
@@ -424,5 +444,7 @@ export function formatSubagentResultReceipt(input: {
 	}
 
 	lines.push("Full grouped output was sent over intercom.");
-	return lines.join("\n");
+	const safeLines = lines.map(safeTerminalText);
+	const metadata = [...safeLines, ...input.payload.children.map((child, index) => safeTerminalText(`Child ${child.index ?? index}: ${child.agent} | State: ${child.status}`))];
+	return boundRetainedStatusResponse(safeLines, metadata);
 }

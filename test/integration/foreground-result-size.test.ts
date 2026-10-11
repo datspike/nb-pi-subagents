@@ -1,5 +1,9 @@
+import path from "node:path";
+import { inspectSubagentStatus } from "../../src/runs/background/run-status.ts";
+import { DIRS } from "../../src/shared/types.ts";
 import { describe, it, before, after, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import type { MockPi } from "../support/helpers.ts";
 import { createMockPi, createTempDir, removeTempDir, events, tryImport } from "../support/helpers.ts";
 
@@ -46,6 +50,7 @@ function makeState(cwd: string) {
 		baseCwd: cwd,
 		currentSessionId: null,
 		asyncJobs: new Map(),
+		foregroundRuns: new Map(),
 		cleanupTimers: new Map(),
 		lastUiContext: null,
 		poller: null,
@@ -59,14 +64,14 @@ function makeState(cwd: string) {
 	};
 }
 
-function makeExecutor(cwd: string) {
+function makeExecutor(cwd: string, state = makeState(cwd)) {
 	return createSubagentExecutor!({
 		pi: {
 			events: { emit: () => {} },
 			getSessionName: () => undefined,
 			setSessionName: () => {},
 		},
-		state: makeState(cwd),
+		state,
 		config: {},
 		asyncByDefault: false,
 		tempArtifactsDir: cwd,
@@ -184,5 +189,114 @@ describe("foreground result payload compaction", { skip: !available ? "subagent 
 
 		const payloadSize = JSON.stringify(result).length;
 		assert.ok(payloadSize < 80_000, `expected compact foreground payload, got ${payloadSize} bytes`);
+	});
+
+	it("inlines the head of a long foreground output and names the file that holds all of it", async () => {
+		const output = Array.from({ length: 200 }, (_, index) => `report line ${index} ${"x".repeat(40)}`).join("\n");
+		mockPi.onCall({ jsonl: [events.assistantMessage(output)] });
+
+		const result = await makeExecutor(tempDir).execute(
+			"id",
+			{ agent: "tester", task: "Write a long report" },
+			new AbortController().signal,
+			undefined,
+			makeCtx(tempDir),
+		);
+
+		const text = result.content[0]?.text ?? "";
+		assert.ok(text.includes(output.slice(0, 1_500)));
+		assert.ok(!text.includes("report line 199"));
+		const fullOutputPath = text.match(/\nFull output: (.+) \(\d+\.\d KB, 200 lines\)\. Read it if needed\./)?.[1];
+		assert.ok(fullOutputPath, text.slice(-300));
+		assert.ok(fs.readFileSync(fullOutputPath, "utf-8").includes(output));
+	});
+
+	it("caps a long foreground output saved to an explicit output file and keeps the saved-file line", async () => {
+		const output = Array.from({ length: 200 }, (_, index) => `saved line ${index} ${"x".repeat(40)}`).join("\n");
+		mockPi.onCall({ jsonl: [events.assistantMessage(output)] });
+
+		const result = await makeExecutor(tempDir).execute(
+			"id",
+			{ agent: "tester", task: "Write a long report", output: "report.md" },
+			new AbortController().signal,
+			undefined,
+			makeCtx(tempDir),
+		);
+
+		const text = result.content[0]?.text ?? "";
+		assert.ok(text.includes(output.slice(0, 1_500)));
+		assert.ok(!text.includes("saved line 199"), `expected a capped result, got ${text.length} chars`);
+		const savedPath = text.match(/\nOutput saved to: (.+) \(\d+\.\d KB, 200 lines\)\. Read this file if needed\./)?.[1];
+		assert.ok(savedPath, text.slice(-300));
+		assert.ok(fs.readFileSync(savedPath, "utf-8").includes(output));
+	});
+	for (const saveAggregate of [false, true]) for (const failed of [false, true]) it(`bounds a 64-child workflow aggregate (${failed ? "failure" : "success"}, aggregate=${saveAggregate}) and retains all mappings`, async () => {
+		for (let index = 0; index < 64; index++) mockPi.onCall({ output: "done" });
+		const workflow = `const children = await runs.all(Array.from({ length: 64 }, (_, i) => ({ key: "child-" + i, agent: "tester", task: "Write your findings to: /requested/${"x".repeat(220)}-" + i + ".md", output: "child-" + i + ".md" }))); ${failed ? 'throw new Error("aggregate failure");' : 'return "done";'}`;
+		const result = await makeExecutor(tempDir).execute("large-workflow", { workflowScript: workflow, async: false, output: saveAggregate ? `${tempDir}/aggregate.md` : false }, new AbortController().signal, undefined, makeCtx(tempDir));
+		const text = result.content[0]?.text ?? "";
+		assert.equal(Boolean(result.isError), failed);
+		assert.ok(Buffer.byteLength(text, "utf8") <= 16384, `workflow response has ${Buffer.byteLength(text)} bytes; suffix=${text.slice(-250)}`);
+		assert.match(text, /Status output truncated/);
+		let file = text.match(/Full output: ([^\n]+)/)?.[1];
+		if (!file) {
+			const ledgerFile = text.match(/Full response metadata: ([^\n]+)/)?.[1];
+			assert.ok(ledgerFile, text.slice(-800));
+			const metadata = JSON.parse(fs.readFileSync(ledgerFile, "utf8")).verifiedMetadata as string[];
+			file = metadata.find((line) => line.startsWith("Full output: "))?.slice("Full output: ".length);
+		}
+		assert.ok(file, text.slice(-800));
+		const retained = fs.readFileSync(file, "utf8");
+		assert.match(retained, /Output path mappings:/);
+		assert.ok(retained.includes("child-63"));
+		assert.ok(retained.includes("x".repeat(220) + "-63.md"));
+	});
+	for (const value of ["x", "世界😀"]) for (const id of [undefined, "missing-transcript-run"]) it(`bounds malformed transcript target/error (multibyte=${value !== "x"}, id=${Boolean(id)})`, async () => {
+		const result = await makeExecutor(tempDir).execute("oversized-transcript-target", { action: "status", view: "transcript", dir: DIRS.async + "/" + value.repeat(50000), ...(id ? { id } : {}) }, new AbortController().signal, undefined, makeCtx(tempDir));
+		const text = result.content[0]?.text ?? "";
+		assert.equal(result.isError, true);
+		assert.ok(Buffer.byteLength(text, "utf8") <= 16384, `${Buffer.byteLength(text)} bytes`);
+		assert.match(text, /^Transcript target:/);
+		assert.match(text, /Status file not found|does not match|Unable to resolve|No run found/);
+		assert.doesNotMatch(text, /\uFFFD/u);
+	});
+	for (const source of ["memory", "artifact"]) for (const value of ["x", "世界😀"]) for (const many of [false, true]) it(`bounds remembered foreground transcript (${source}, multibyte=${value !== "x"}, many=${many})`, async () => {
+		const output = many
+			? Array.from({ length: 100 }, (_, i) => `entry-${i}: ${value.repeat(300)}`).concat("huge: " + value.repeat(100000), "latest context").join("\n")
+			: "single: " + value.repeat(100000);
+		const file = path.join(tempDir, "remembered-output.md");
+		if (source === "artifact") fs.writeFileSync(file, output);
+		const state = makeState(tempDir);
+		state.foregroundRuns.set("remembered-budget", { runId: "remembered-budget", mode: "single", cwd: tempDir, sessionId: "session-123", updatedAt: Date.now(), children: [{ agent: "tester", index: 0, status: "completed", finalOutput: source === "memory" ? output : "stale cached output", ...(source === "artifact" ? { artifactPaths: { outputPath: file } } : {}) }] });
+		const result = await makeExecutor(tempDir, state).execute("remembered-transcript-budget", { action: "status", id: "remembered-budget", view: "transcript", lines: 500 }, new AbortController().signal, undefined, makeCtx(tempDir));
+		assert.equal(result.isError, undefined);
+		const text = result.content[0]?.text ?? "";
+		const body = text.split("Result transcript tail:\n")[1];
+		assert.ok(body);
+		assert.ok(Buffer.byteLength(body) <= 32768, `${Buffer.byteLength(body)} bytes`);
+		assert.ok(body.split("\n").every((line) => line.length <= 2002));
+		assert.match(body, /content omitted/);
+		assert.doesNotMatch(body, /[\uD800-\uDFFF]|\uFFFD/u);
+		if (many) { assert.ok(Buffer.byteLength(body) > 16384); assert.ok(body.endsWith("latest context")); assert.match(body, /earlier lines omitted/); }
+		if (source === "artifact") { assert.ok(text.includes(file)); assert.equal(fs.readFileSync(file, "utf8"), output); assert.doesNotMatch(body, /stale cached output/); }
+	});
+	it("preserves the successful 32 KiB transcript body through the executor", async () => {
+		fs.mkdirSync(DIRS.async, { recursive: true });
+		const dir = fs.mkdtempSync(path.join(DIRS.async, "transcript-body-"));
+		try {
+			fs.writeFileSync(path.join(dir, "status.json"), JSON.stringify({ runId: path.basename(dir), sessionId: "session-123", mode: "single", state: "complete", steps: [{ agent: "tester", status: "complete" }] }));
+			const output = Array.from({ length: 100 }, (_, i) => `entry-${i}: ${"世界😀".repeat(80)}`).concat("latest context").join("\n");
+			fs.writeFileSync(path.join(dir, "output-0.log"), output);
+			const reference = inspectSubagentStatus({ dir, view: "transcript", lines: 500 }).content[0];
+			assert.ok(reference?.type === "text");
+			const body = reference.text.split(/Transcript tail from .*:\n/)[1];
+			assert.ok(body);
+			assert.ok(Buffer.byteLength(body) > 16384 && Buffer.byteLength(body) <= 32768);
+			const result = await makeExecutor(tempDir).execute("successful-transcript-budget", { action: "status", view: "transcript", dir, lines: 500 }, new AbortController().signal, undefined, makeCtx(tempDir));
+			assert.equal(result.isError, undefined);
+			assert.ok(result.content[0]?.text?.includes(reference.text));
+			assert.ok(body.endsWith("latest context"));
+			assert.equal(fs.readFileSync(path.join(dir, "output-0.log"), "utf8"), output);
+		} finally { fs.rmSync(dir, { recursive: true, force: true }); }
 	});
 });

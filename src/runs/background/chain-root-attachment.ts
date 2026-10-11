@@ -13,7 +13,8 @@ export interface ImportedAsyncRoot {
 
 export interface ImportedAsyncRootResult {
 	agent: string;
-	importedPublication?: { sessionId?: string; toolCallId?: string };
+	/** `snapshot` is the payload text this result was built from, so cleanup can tell it from a newer one. */
+	importedPublication?: { sessionId?: string; toolCallId?: string; snapshot: string };
 	/** Human-readable display name for the child session, when derived at launch. */
 	sessionName?: string;
 	output: string;
@@ -75,6 +76,7 @@ interface AsyncResultFile {
 		artifactPaths?: ArtifactPaths;
 		savedOutputPath?: string;
 		outputSaveError?: string;
+		artifactOutputSaveFailed?: boolean;
 		transcriptPath?: string;
 		transcriptError?: string;
 	}>;
@@ -83,18 +85,20 @@ interface AsyncResultFile {
 const TERMINAL_STATES = new Set(["complete", "failed", "partial", "paused", "stopped"]);
 const TERMINAL_STEP_STATUSES = new Set(["complete", "completed", "failed", "partial", "paused", "stopped"]);
 
-function readResultFile(resultPath: string): AsyncResultFile | undefined {
+function readResultFile(resultPath: string): { data: AsyncResultFile; raw: string } | undefined {
+	let raw: string;
 	try {
-		return JSON.parse(fs.readFileSync(resultPath, "utf-8")) as AsyncResultFile;
+		raw = fs.readFileSync(resultPath, "utf-8");
 	} catch (error) {
 		if (typeof error === "object" && error !== null && "code" in error && (error as NodeJS.ErrnoException).code === "ENOENT") {
 			return undefined;
 		}
 		throw error;
 	}
+	return { data: JSON.parse(raw) as AsyncResultFile, raw };
 }
 
-function readImportedResultFile(root: ImportedAsyncRoot, status: AsyncStatus | null): AsyncResultFile | undefined {
+function readImportedResultFile(root: ImportedAsyncRoot, status: AsyncStatus | null): { data: AsyncResultFile; raw: string } | undefined {
 	const direct = readResultFile(root.resultPath);
 	if (direct || !status?.sessionId) return direct;
 	const indexedPath = resultPayloadPathForSessionRun(path.dirname(root.resultPath), status.sessionId, root.runId);
@@ -180,7 +184,7 @@ function outputFromTimeout(root: ImportedAsyncRoot, status: AsyncStatus | null, 
 	};
 }
 
-function buildImportedResult(root: ImportedAsyncRoot, status: AsyncStatus | null, result: AsyncResultFile): ImportedAsyncRootResult {
+function buildImportedResult(root: ImportedAsyncRoot, status: AsyncStatus | null, { data: result, raw }: { data: AsyncResultFile; raw: string }): ImportedAsyncRootResult {
 	const child = result.results?.[root.index];
 	const step = selectedStatusStep(status, root.index);
 	const state = resultState(result, child);
@@ -197,6 +201,7 @@ function buildImportedResult(root: ImportedAsyncRoot, status: AsyncStatus | null
 		importedPublication: {
 			...(typeof result.sessionId === "string" ? { sessionId: result.sessionId } : {}),
 			...(typeof result.toolCallId === "string" ? { toolCallId: result.toolCallId } : {}),
+			snapshot: raw,
 		},
 		output: success ? output : (output || error || ""),
 		success,
@@ -216,7 +221,8 @@ function buildImportedResult(root: ImportedAsyncRoot, status: AsyncStatus | null
 		...(child?.structuredOutputPath ?? step?.structuredOutputPath ? { structuredOutputPath: child?.structuredOutputPath ?? step?.structuredOutputPath } : {}),
 		...(child?.structuredOutputSchemaPath ?? step?.structuredOutputSchemaPath ? { structuredOutputSchemaPath: child?.structuredOutputSchemaPath ?? step?.structuredOutputSchemaPath } : {}),
 		...(child?.acceptance ?? step?.acceptance ? { acceptance: child?.acceptance ?? step?.acceptance } : {}),
-		...(child?.artifactPaths ? { artifactPaths: child.artifactPaths } : {}),
+		// Suppress failed output while retaining sibling metadata/transcript paths.
+		...(child?.artifactPaths ? { artifactPaths: child.artifactOutputSaveFailed === true ? { ...child.artifactPaths, outputPath: "" } : child.artifactPaths } : {}),
 		...(child?.savedOutputPath ? { savedOutputPath: child.savedOutputPath } : {}),
 		...(child?.outputSaveError ? { outputSaveError: child.outputSaveError } : {}),
 		...(child?.transcriptPath ?? step?.transcriptPath ? { transcriptPath: child?.transcriptPath ?? step?.transcriptPath } : {}),

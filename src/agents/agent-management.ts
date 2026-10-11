@@ -36,6 +36,7 @@ import { CODE_OWNED_EXTERNAL_CLI_ADAPTER_LABEL, isCodeOwnedExternalCliAdapterId,
 import { resolveExternalCliBinaryAvailability, type ExternalCliBinaryAvailability } from "../runs/shared/external-cli-preflight.ts";
 import type { AcceptanceInput, AgentCapabilitiesSnapshot, AgentCapabilityRow, Details, ExtensionConfig, ToolBudgetConfig } from "../shared/types.ts";
 import { getProjectConfigDir } from "../shared/utils.ts";
+import { projectScopeRequiresTrustMessage } from "./agent-scope.ts";
 import { previewDisplayText } from "../shared/display-text.ts";
 import { capabilityCeilingAgentRestrictionSources, isAgentAllowedByCapabilityCeiling, resolveCurrentSubagentCapabilityCeiling } from "../runs/shared/capability-ceiling.ts";
 import { mergeRuntimeAgents, type RuntimeAgentOwner } from "./runtime-agent-registry.ts";
@@ -43,10 +44,10 @@ import { listExternalJobProviders } from "../api/external-job-provider.ts";
 
 type ManagementAction = "list" | "get" | "models" | "create" | "update" | "delete" | "eject" | "disable" | "enable" | "reset";
 type ManagementScope = "user" | "project";
-type ManagementContext = Pick<ExtensionContext, "cwd" | "modelRegistry"> & { model?: ExtensionContext["model"]; config?: ExtensionConfig; currentSessionId?: string; runtimeAgentOwner?: RuntimeAgentOwner; onAgentsChanged?: () => void; discoverAgentsAll?: typeof discoverAgentsAll };
+type ManagementContext = Pick<ExtensionContext, "cwd" | "modelRegistry"> & { model?: ExtensionContext["model"]; config?: ExtensionConfig; currentSessionId?: string; projectTrusted?: boolean; runtimeAgentOwner?: RuntimeAgentOwner; onAgentsChanged?: () => void; discoverAgentsAll?: typeof discoverAgentsAll };
 
 function discoverCatalog(ctx: ManagementContext, cwd: string = ctx.cwd, provider?: string): AgentDiscoveryAllResult {
-	return (ctx.discoverAgentsAll ?? discoverAgentsAll)(cwd, provider);
+	return (ctx.discoverAgentsAll ?? discoverAgentsAll)(cwd, provider, { projectTrusted: ctx.projectTrusted });
 }
 
 interface ManagementParams {
@@ -141,10 +142,11 @@ function effectiveAgentsForScope(
 	d: DiscoveredAgentSets,
 	runtimeAgentOwner?: RuntimeAgentOwner,
 	preferredModelProvider?: string,
-): AgentConfig[] {
+	projectTrusted?: boolean,
+ ): AgentConfig[] {
 	let agents = mergeAgentsForScope(scope, d.user, d.project, d.builtin, d.package);
 	if (runtimeAgentOwner) {
-		agents = mergeRuntimeAgents(runtimeAgentOwner, { agents }, allAgents(d), { cwd: d.cwd, scope, preferredModelProvider }).agents;
+		agents = mergeRuntimeAgents(runtimeAgentOwner, { agents }, allAgents(d), { cwd: d.cwd, scope, preferredModelProvider, projectTrusted }).agents;
 	}
 	return agents;
 }
@@ -153,13 +155,14 @@ function availableAgentNamesFromDiscovery(
 	d: DiscoveredAgentSets,
 	runtimeAgentOwner?: RuntimeAgentOwner,
 	preferredModelProvider?: string,
-): string[] {
-	const agents = runtimeAgentOwner ? effectiveAgentsForScope("both", d, runtimeAgentOwner, preferredModelProvider) : allAgents(d);
+	projectTrusted?: boolean,
+ ): string[] {
+	const agents = runtimeAgentOwner ? effectiveAgentsForScope("both", d, runtimeAgentOwner, preferredModelProvider, projectTrusted) : allAgents(d);
 	return [...new Set(agents.map((agent) => agent.name))].sort((a, b) => a.localeCompare(b));
 }
 
 function availableAgentNames(ctx: ManagementContext, cwd: string = ctx.cwd): string[] {
-	return availableAgentNamesFromDiscovery(discoverCatalog(ctx, cwd));
+	return availableAgentNamesFromDiscovery(discoverCatalog(ctx, cwd), ctx.runtimeAgentOwner, ctx.model?.provider, ctx.projectTrusted);
 }
 
 function findAgentsInDiscovery(
@@ -168,10 +171,11 @@ function findAgentsInDiscovery(
 	scope: AgentScope = "both",
 	runtimeAgentOwner?: RuntimeAgentOwner,
 	preferredModelProvider?: string,
-): AgentConfig[] {
+	projectTrusted?: boolean,
+ ): AgentConfig[] {
 	const raw = name.trim();
 	const sanitized = sanitizeName(raw);
-	const scoped = effectiveAgentsForScope(scope, d, runtimeAgentOwner, preferredModelProvider);
+	const scoped = effectiveAgentsForScope(scope, d, runtimeAgentOwner, preferredModelProvider, projectTrusted);
 	let resolved = resolveAgentName(raw, scoped);
 	if (!resolved.agent && !resolved.error && sanitized !== raw) resolved = resolveAgentName(sanitized, scoped);
 	if (resolved.agent) return scoped.filter((agent) => agent.name === resolved.agent!.name).sort((a, b) => a.source.localeCompare(b.source));
@@ -182,7 +186,7 @@ function findAgentsInDiscovery(
 }
 
 function findAgents(name: string, ctx: ManagementContext, scope: AgentScope = "both"): AgentConfig[] {
-	return findAgentsInDiscovery(name, discoverCatalog(ctx), scope);
+	return findAgentsInDiscovery(name, discoverCatalog(ctx), scope, undefined, undefined, ctx.projectTrusted);
 }
 
 function diagnosticsForScope(diagnostics: AgentDiscoveryDiagnostic[] | undefined, scope: AgentScope): AgentDiscoveryDiagnostic[] | undefined {
@@ -228,13 +232,14 @@ function modelWarning(ctx: ManagementContext, model: string | undefined): string
 	return `Warning: model '${model}' is not in the current model registry. Run subagent({ action: "models" }) to list valid provider/id selectors, then use the exact provider/id form (bare ids resolve only when unique).`;
 }
 
-function skillsWarning(cwd: string, agent: Pick<AgentConfig, "skills" | "skillPath" | "filePath">): string | undefined {
+function skillsWarning(cwd: string, agent: Pick<AgentConfig, "skills" | "skillPath" | "filePath">, projectTrusted?: boolean): string | undefined {
 	if (!agent.skills?.length) return undefined;
 	const { missing } = resolveSkills(
 		agent.skills,
 		cwd,
 		agent.skillPath,
 		agent.filePath ? path.dirname(agent.filePath) : cwd,
+		projectTrusted,
 	);
 	return missing.length ? `Warning: skills not found: ${missing.join(", ")}.` : undefined;
 }
@@ -972,7 +977,7 @@ function formatAgentDetail(agent: AgentConfig): string {
 export function handleList(params: ManagementParams, ctx: ManagementContext): AgentToolResult<Details> {
 	const scope = normalizeListScope(params.agentScope) ?? "both";
 	const d = discoverCatalog(ctx, ctx.cwd, ctx.model?.provider);
-	let scopedAgents = effectiveAgentsForScope(scope, d, ctx.runtimeAgentOwner, ctx.model?.provider);
+	let scopedAgents = effectiveAgentsForScope(scope, d, ctx.runtimeAgentOwner, ctx.model?.provider, ctx.projectTrusted);
 	scopedAgents = scopedAgents
 		.sort((a, b) => a.name.localeCompare(b.name));
 	const capabilityCeiling = resolveCurrentSubagentCapabilityCeiling(ctx.currentSessionId);
@@ -983,7 +988,7 @@ export function handleList(params: ManagementParams, ctx: ManagementContext): Ag
 	const proactiveSuggestions = buildProactiveSkillSubagentRecommendationLines({
 		agents,
 		...(ctx.config?.proactiveSkillSubagents !== undefined ? { config: ctx.config.proactiveSkillSubagents } : {}),
-		discoverAvailableSkills: () => discoverAvailableSkills(ctx.cwd),
+		discoverAvailableSkills: () => discoverAvailableSkills(ctx.cwd, { projectTrusted: ctx.projectTrusted }),
 	});
 	const providerStatus = registeredExternalJobProviderStatus();
 	const providerNameSet = providerNames(providerStatus);
@@ -1028,7 +1033,7 @@ function handleModels(params: ManagementParams, ctx: ManagementContext): AgentTo
 	if (!scope) return result("agentScope must be 'user', 'project', or 'both' for models.", true);
 
 	const discovered = discoverCatalog(ctx, ctx.cwd, ctx.model?.provider);
-	const effectiveAgents = effectiveAgentsForScope(scope, discovered, ctx.runtimeAgentOwner, ctx.model?.provider)
+	const effectiveAgents = effectiveAgentsForScope(scope, discovered, ctx.runtimeAgentOwner, ctx.model?.provider, ctx.projectTrusted)
 		.sort((a, b) => a.name.localeCompare(b.name));
 	const availableModels = ctx.modelRegistry.getAvailable().map(toModelInfo);
 	const currentModel = ctx.model ? { provider: ctx.model.provider, id: ctx.model.id } : undefined;
@@ -1037,7 +1042,7 @@ function handleModels(params: ManagementParams, ctx: ManagementContext): AgentTo
 
 	let selectedAgents = effectiveAgents;
 	if (requestedAgent) {
-		const matches = findAgentsInDiscovery(requestedAgent, discovered, scope, ctx.runtimeAgentOwner, ctx.model?.provider);
+		const matches = findAgentsInDiscovery(requestedAgent, discovered, scope, ctx.runtimeAgentOwner, ctx.model?.provider, ctx.projectTrusted);
 		const diagnostics = diagnosticsForScope(discovered.agentDiagnostics, scope);
 		const normalizedName = sanitizeName(requestedAgent);
 		const diagnostic = findBlockingAgentDiagnostic(requestedAgent, matches, diagnostics)
@@ -1046,7 +1051,7 @@ function handleModels(params: ManagementParams, ctx: ManagementContext): AgentTo
 		const distinctNames = [...new Set(matches.map((agent) => agent.name))];
 		if (distinctNames.length > 1) return result(`Ambiguous agent alias or name '${params.agent}': ${distinctNames.sort((a, b) => a.localeCompare(b)).join(", ")}`, true);
 		if (!matches.length) {
-			return result(`Agent '${params.agent}' not found. Available: ${availableAgentNamesFromDiscovery(discovered, ctx.runtimeAgentOwner, ctx.model?.provider).join(", ") || "none"}.`, true);
+			return result(`Agent '${params.agent}' not found. Available: ${availableAgentNamesFromDiscovery(discovered, ctx.runtimeAgentOwner, ctx.model?.provider, ctx.projectTrusted).join(", ") || "none"}.`, true);
 		}
 		selectedAgents = [matches[0]!];
 	}
@@ -1154,6 +1159,7 @@ export function handleCreate(params: ManagementParams, ctx: ManagementContext): 
 	const scopeRaw = cfg.scope ?? "user";
 	if (scopeRaw !== "user" && scopeRaw !== "project") return result("config.scope must be 'user' or 'project'.", true);
 	const scope = scopeRaw;
+	if (scope === "project" && ctx.projectTrusted === false) return result(projectScopeRequiresTrustMessage(ctx.cwd), true);
 	if (hasKey(cfg, "steps")) return result("Durable chain definitions were removed; use a workflow script or /prompt-workflow for repeatable workflows.", true);
 	const d = discoverCatalog(ctx);
 	const projectConfigDir = getProjectConfigDir(ctx.cwd);
@@ -1183,7 +1189,7 @@ export function handleCreate(params: ManagementParams, ctx: ManagementContext): 
 	if (profileError) return result(profileError, true);
 	const mw = modelWarning(ctx, agent.model);
 	if (mw) warnings.push(mw);
-	const sw = skillsWarning(ctx.cwd, agent);
+	const sw = skillsWarning(ctx.cwd, agent, ctx.projectTrusted);
 	if (sw) warnings.push(sw);
 	fs.writeFileSync(targetPath, serializeAgent(agent), "utf-8");
 	ctx.onAgentsChanged?.();
@@ -1239,7 +1245,7 @@ export function handleUpdate(params: ManagementParams, ctx: ManagementContext): 
 		if (mw) warnings.push(mw);
 	}
 	if (hasKey(cfg, "skills") || hasKey(cfg, "skillPath")) {
-		const sw = skillsWarning(ctx.cwd, updated);
+		const sw = skillsWarning(ctx.cwd, updated, ctx.projectTrusted);
 		if (sw) warnings.push(sw);
 	}
 	if (updated.name !== oldName) {
@@ -1273,6 +1279,7 @@ function handleEject(params: ManagementParams, ctx: ManagementContext): AgentToo
 	const parsedScope = actionScope(params.agentScope, "eject");
 	if (parsedScope.error) return parsedScope.error;
 	const scope = parsedScope.scope!;
+	if (scope === "project" && ctx.projectTrusted === false) return result(projectScopeRequiresTrustMessage(ctx.cwd), true);
 	const d = discoverCatalog(ctx);
 	const source = [...d.package, ...d.builtin].find((a) => a.name === raw || a.name === sanitized);
 	if (!source) {
