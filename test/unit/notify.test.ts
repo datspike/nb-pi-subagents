@@ -1068,6 +1068,35 @@ describe("completion formatting helpers", () => {
 		assert.match(content, /1 additional child preview\(s\) omitted/);
 	});
 
+	it("preserves verified workflow retrieval metadata through an oversized notifier message", async () => {
+		const root = mkdtempSync(join(tmpdir(), "pi-notify-retention-"));
+		try {
+			const results = Array.from({ length: 9 }, (_, index) => {
+				const outputPath = join(root, `output-${index}.md`);
+				const structuredPath = join(root, `structured-${index}.json`);
+				writeFileSync(outputPath, "output", "utf8");
+				writeFileSync(structuredPath, "{}", "utf8");
+				return {
+					workflowKey: `child-${index}`, runId: `child-run-${index}`, success: true,
+					output: "x".repeat(2_000), artifactPaths: { outputPath }, structuredOutput: { index }, structuredOutputPath: structuredPath,
+				};
+			});
+			const { notifier, sent } = createPi("session-a");
+			try {
+				assert.equal(await notifier.deliver(completionResult({ id: "workflow-retention", mode: "workflow", results })), true);
+				const content = (sent[0]!.message as { content: string }).content;
+				assert.ok(Buffer.byteLength(content, "utf8") <= 16 * 1024);
+				assert.match(content, /Workflow run: workflow-retention/);
+				assert.ok(content.includes(results[8]!.artifactPaths.outputPath));
+				assert.ok(content.includes(results[8]!.structuredOutputPath!));
+			} finally {
+				notifier.dispose();
+			}
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
 	it("reports false when Pi rejects sendMessage synchronously", async () => {
 		const pi = { events: createEventBus(), sendMessage() { throw new Error("runtime inactive"); } };
 		const notifier = registerSubagentNotify(pi as never, { currentSessionId: "session-a" }, { batchConfig: { enabled: false } });

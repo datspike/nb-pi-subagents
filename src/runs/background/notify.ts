@@ -347,6 +347,23 @@ function formatCorrelationLines(details: SubagentNotifyDetails): string[] {
 	].filter((line): line is string => line !== undefined);
 }
 
+function formatVerifiedCompletionMetadata(details: SubagentNotifyDetails): string[] {
+	const lines: string[] = [];
+	if (details.workflowReceiptPath) lines.push(`Workflow receipt: ${boundedSafeText(details.workflowReceiptPath)}`);
+	for (const child of details.childOutputs ?? []) {
+		lines.push(`Child output: key=${boundedSafeText(child.workflowKey ?? "unavailable")} run=${boundedSafeText(child.runId ?? "unavailable")} status=${boundedSafeText(child.status) || "unavailable"}`);
+		if (child.savedOutputPath) lines.push(`Saved output: ${boundedSafeText(child.savedOutputPath)}`);
+		if (child.outputArtifactPath) lines.push(`Output artifact (retention-managed): ${boundedSafeText(child.outputArtifactPath)}`);
+		if (child.structuredOutputPath) lines.push(`Structured output (retention-managed): ${boundedSafeText(child.structuredOutputPath)}`);
+		if (child.outputArtifactError) lines.push(formatRetainedPathError("Output artifact", child.outputArtifactError));
+		if (child.structuredOutputError) lines.push(formatRetainedPathError("Structured output", child.structuredOutputError));
+	}
+	lines.push(...formatCorrelationLines(details));
+	const sessionLine = formatSessionLine(details);
+	if (sessionLine) lines.push(sessionLine);
+	return lines;
+}
+
 const WATCHDOG_BLOCKERS_HEADING = "Watchdog blockers:";
 
 function formatWatchdogBlockerLines(details: SubagentNotifyDetails): string[] {
@@ -659,7 +676,7 @@ function sendCompletion(pi: Pick<ParentWake, "sendMessage">, items: PendingCompl
 	if (items.length === 0) return true;
 	const details = items.map((item) => item.details);
 	const rawContent = details.length === 1 ? formatSingleCompletion(details[0]!) : formatGroupedCompletion(details);
-	const content = boundStatusResponse(rawContent);
+	const content = boundStatusResponse(rawContent, details.flatMap(formatVerifiedCompletionMetadata));
 	const display = details.some((detail) => detail.source === "foreground" || detail.status !== "completed" || detail.scheduleOrigin !== undefined);
 	const triggerTurn = items.some((item) => item.triggerTurn);
 	// Pi can queue an accepted wake behind the current turn or past agent_settled.

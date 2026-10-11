@@ -33,6 +33,26 @@ describe("result file indexes", () => {
 		}
 	});
 
+	it("returns an indexed public result without creating a lease during read-only lookup", () => {
+		const resultsDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-result-files-read-only-"));
+		const originalMkdirSync = fsDefault.mkdirSync;
+		try {
+			const resultPath = path.join(resultsDir, "read-only.json");
+			writeAsyncResultFile(resultPath, { id: "read-only", runId: "read-only", sessionId: "session-a", success: true });
+			fsDefault.mkdirSync = ((directory: fs.PathLike, options?: fs.MakeDirectoryOptions) => {
+				if (String(directory).includes("result-leases")) throw Object.assign(new Error("read-only"), { code: "EACCES" });
+				return originalMkdirSync(directory, options);
+			}) as typeof fsDefault.mkdirSync;
+			syncBuiltinESMExports();
+			assert.equal(resultPayloadPathForIndexedRun(resultsDir, "read-only"), resultPath);
+			assert.equal(fs.readdirSync(path.join(resultsDir, "result-index", "runs")).length, 1);
+		} finally {
+			fsDefault.mkdirSync = originalMkdirSync;
+			syncBuiltinESMExports();
+			fs.rmSync(resultsDir, { recursive: true, force: true });
+		}
+	});
+
 	it("removes orphan index entries without deleting flat result files", () => {
 		const resultsDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-result-files-index-"));
 		try {

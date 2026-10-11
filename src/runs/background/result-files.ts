@@ -442,14 +442,27 @@ export function resultPayloadFileForSessionRun(resultsDir: string, sessionId: st
 
 function resultPayloadLocationFromIndex(resultsDir: string, entry: ResultIndexEntry): ResultPayloadLocation | undefined {
 	if (entry.file !== path.basename(entry.file) || !entry.file.endsWith(".json")) return undefined;
-	const pendingState = promotePendingResultFile(resultsDir, entry.sessionId, entry.runId, entry.file);
+	const resultPath = path.join(resultsDir, entry.file);
+	if (!pendingResultExists(resultsDir, entry.sessionId, entry.runId)) {
+		return existingResultFile(resultPath) ? { file: entry.file, path: resultPath, state: "public" } : undefined;
+	}
+	let pendingState: "none" | "promoted" | "pending";
+	try {
+		pendingState = promotePendingResultFile(resultsDir, entry.sessionId, entry.runId, entry.file);
+	} catch (error) {
+		const code = (error as NodeJS.ErrnoException).code;
+		if (code === "EACCES" || code === "EPERM" || code === "EROFS" || code === "ENOTDIR") {
+			const pending = pendingResultLocationForSessionRun(resultsDir, entry.sessionId, entry.runId, entry.file);
+			if (pending) return pending;
+			return existingResultFile(resultPath) ? { file: entry.file, path: resultPath, state: "public" } : undefined;
+		}
+		throw error;
+	}
 	if (pendingState === "pending") {
 		const pending = pendingResultLocationForSessionRun(resultsDir, entry.sessionId, entry.runId, entry.file);
 		if (pending) return pending;
-		const resultPath = path.join(resultsDir, entry.file);
 		return existingResultFile(resultPath) ? { file: entry.file, path: resultPath, state: "public" } : undefined;
 	}
-	const resultPath = path.join(resultsDir, entry.file);
 	if (pendingState === "promoted" || existingResultFile(resultPath)) return { file: entry.file, path: resultPath, state: "public" };
 	return undefined;
 }
