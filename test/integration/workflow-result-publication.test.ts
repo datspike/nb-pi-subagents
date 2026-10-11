@@ -204,3 +204,64 @@ describe("host workflow result publication", { skip: !available }, () => {
 	});
 	}
 });
+
+describe("workflow artifact failure projection", { skip: !available }, () => {
+	installAsyncExecutionHooks();
+	for (const background of [false, true]) it(`does not publish a stale child artifact (async=${background})`, async () => {
+		mockPi.onCall({ steps: [{ jsonl: [events.assistantMessage("CURRENT_CHILD_OUTPUT")] }] });
+		const originalWrite = fs.writeFileSync; const staleFiles = new Set<string>();
+		const state = { baseCwd: tempDir, currentSessionId: "session-provenance", completionOwnerId: "owner", asyncJobs: new Map(), foregroundControls: new Map(), cleanupTimers: new Map(), completionSeen: new Map(), resultFileCoalescer: { schedule: () => false, clear() {} } } as unknown as SubagentState;
+		const pi = { events: createEventBus(), getSessionName: () => undefined };
+		const executor = createSubagentExecutor!({ pi, state, config: {}, asyncByDefault: false, tempArtifactsDir: tempDir, getSubagentSessionRoot: () => tempDir, expandTilde: (p: string) => p, discoverAgents: () => ({ agents: [makeAgent("worker")] }) });
+		fs.writeFileSync = ((file, ...args) => {
+			const target = String(file);
+			if (target.endsWith("_output.md")) { originalWrite(file, "STALE_NOT_CURRENT", "utf8"); staleFiles.add(target); throw new Error("fixture artifact persistence failed"); }
+			return originalWrite(file, ...args);
+		}) as typeof fs.writeFileSync; syncBuiltinESMExports();
+		try {
+			const launch = await executor.execute("artifact-provenance", { async: background, mission: false, workflowScript: 'return await runs.run("child", { agent: "worker", task: "fixture", async: false, artifacts: true });' }, new AbortController().signal, undefined, makeMinimalCtx(tempDir));
+			assert.notEqual(launch.isError, true, launch.content[0]?.text);
+			const payload = background ? await readAsyncPayload(launch.details.asyncId!) : launch.details;
+			const child = payload.workflow.value;
+			assert.ok(staleFiles.size > 0, "the producer failed while a regular stale artifact exists");
+			assert.equal(child.outputArtifactPath, undefined);
+			assert.ok(child.results.some((result: { outputSaveError?: string }) => result.outputSaveError?.includes("fixture artifact persistence failed")));
+			assert.match(child.output, /CURRENT_CHILD_OUTPUT/);
+			if (background) assert.equal(payload.results[0].artifactPaths?.outputPath, undefined, "completion projection must not recreate the failed path");
+			for (const file of staleFiles) assert.equal(fs.readFileSync(file, "utf8"), "STALE_NOT_CURRENT");
+		} finally { fs.writeFileSync = originalWrite; syncBuiltinESMExports(); }
+	});
+});
+
+describe("awaited workflow artifact provenance", { skip: !available }, () => {
+	installAsyncExecutionHooks();
+	for (const background of [false, true]) it(`does not revive a failed async child artifact through workflow projection (async=${background})`, async () => {
+		mockPi.onCall({ steps: [{ jsonl: [events.assistantMessage("CURRENT_CHILD_OUTPUT")] }] });
+		const read = fs.readFileSync; const staleFiles = new Set<string>();
+		const state = { baseCwd: tempDir, currentSessionId: "session-provenance", completionOwnerId: "owner", asyncJobs: new Map(), foregroundControls: new Map(), cleanupTimers: new Map(), completionSeen: new Map(), resultFileCoalescer: { schedule: () => false, clear() {} } } as unknown as SubagentState;
+		const executor = createSubagentExecutor!({ pi: { events: createEventBus(), getSessionName: () => undefined }, state, config: {}, asyncByDefault: true, tempArtifactsDir: tempDir, getSubagentSessionRoot: () => tempDir, expandTilde: (p: string) => p, discoverAgents: () => ({ agents: [makeAgent("worker")] }) });
+		fs.readFileSync = ((file, ...args) => {
+			const raw = read(file, ...args);
+			if (!String(file).endsWith(".json")) return raw;
+			let payload; try { payload = JSON.parse(String(raw)); } catch { return raw; }
+			if (!Array.isArray(payload?.results) || !payload.results.some((child: { agent?: string }) => child.agent === "worker")) return raw;
+			for (const child of payload.results) {
+				const outputPath = child.artifactPaths?.outputPath; if (!outputPath) continue;
+				fs.writeFileSync(outputPath, "STALE_NOT_CURRENT", "utf8"); staleFiles.add(outputPath);
+				child.artifactOutputSaveFailed = true; child.outputSaveError = "fixture artifact persistence failed";
+			}
+			const text = JSON.stringify(payload); return Buffer.isBuffer(raw) ? Buffer.from(text) : text;
+		}) as typeof fs.readFileSync; syncBuiltinESMExports();
+		try {
+			const launch = await executor.execute("awaited-artifact-provenance", { async: background, mission: false, workflowScript: 'return await runs.run("child", { agent: "worker", task: "fixture", artifacts: true });' }, new AbortController().signal, undefined, makeMinimalCtx(tempDir));
+			assert.notEqual(launch.isError, true, launch.content[0]?.text);
+			const payload = background ? await readAsyncPayload(launch.details.asyncId!) : launch.details; const child = payload.workflow.value;
+			assert.ok(staleFiles.size > 0, "the async failure fixture was consumed");
+			assert.ok(child.results.some((result: { outputSaveError?: string; artifactPaths?: { outputPath?: string } }) => result.outputSaveError?.includes("fixture artifact persistence failed") && !result.artifactPaths?.outputPath));
+			assert.equal(child.outputArtifactPath, undefined, "the child failure flag must survive projection");
+			assert.match(child.output, /CURRENT_CHILD_OUTPUT/);
+			if (background) assert.equal(payload.results[0].artifactPaths?.outputPath, undefined, "completion result must not reconstruct the failed pointer");
+			for (const file of staleFiles) assert.equal(read(file, "utf8"), "STALE_NOT_CURRENT");
+		} finally { fs.readFileSync = read; syncBuiltinESMExports(); }
+	});
+});

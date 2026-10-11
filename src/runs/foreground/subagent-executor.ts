@@ -4724,7 +4724,7 @@ function workflowChildResult(
 	const outputReference = result.details.results.find((child) => child.savedOutputPath)?.savedOutputPath
 		?? result.details.results.find((child) => child.outputReference?.path)?.outputReference?.path;
 	const outputArtifactPath = running ? undefined : result.details.parallelHandoff?.path
-		?? result.details.results.find((child) => child.artifactPaths?.outputPath)?.artifactPaths?.outputPath;
+		?? result.details.results.map(verifiedResultOutputArtifact).find((file) => file !== undefined);
 	const outputPathMapping = typeof childParams.task === "string" ? outputPathMappingFromTask(childParams.task, outputReference) : undefined;
 	const externalResult = result.details.results.length === 1 && result.details.results[0]?.runner?.type === "external-cli" ? result.details.results[0] : undefined;
 	const externalStatus = result.details.asyncDir ? readStatus(result.details.asyncDir) : undefined;
