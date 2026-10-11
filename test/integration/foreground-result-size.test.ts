@@ -1,3 +1,6 @@
+import path from "node:path";
+import { inspectSubagentStatus } from "../../src/runs/background/run-status.ts";
+import { DIRS } from "../../src/shared/types.ts";
 import { describe, it, before, after, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -246,5 +249,33 @@ describe("foreground result payload compaction", { skip: !available ? "subagent 
 		assert.match(retained, /Output path mappings:/);
 		assert.ok(retained.includes("child-63"));
 		assert.ok(retained.includes("x".repeat(220) + "-63.md"));
+	});
+	for (const value of ["x", "世界😀"]) for (const id of [undefined, "missing-transcript-run"]) it(`bounds malformed transcript target/error (multibyte=${value !== "x"}, id=${Boolean(id)})`, async () => {
+		const result = await makeExecutor(tempDir).execute("oversized-transcript-target", { action: "status", view: "transcript", dir: DIRS.async + "/" + value.repeat(50000), ...(id ? { id } : {}) }, new AbortController().signal, undefined, makeCtx(tempDir));
+		const text = result.content[0]?.text ?? "";
+		assert.equal(result.isError, true);
+		assert.ok(Buffer.byteLength(text, "utf8") <= 16384, `${Buffer.byteLength(text)} bytes`);
+		assert.match(text, /^Transcript target:/);
+		assert.match(text, /Status file not found|does not match|Unable to resolve|No run found/);
+		assert.doesNotMatch(text, /\uFFFD/u);
+	});
+	it("preserves the successful 32 KiB transcript body through the executor", async () => {
+		fs.mkdirSync(DIRS.async, { recursive: true });
+		const dir = fs.mkdtempSync(path.join(DIRS.async, "transcript-body-"));
+		try {
+			fs.writeFileSync(path.join(dir, "status.json"), JSON.stringify({ runId: path.basename(dir), sessionId: "session-123", mode: "single", state: "complete", steps: [{ agent: "tester", status: "complete" }] }));
+			const output = Array.from({ length: 100 }, (_, i) => `entry-${i}: ${"世界😀".repeat(80)}`).concat("latest context").join("\n");
+			fs.writeFileSync(path.join(dir, "output-0.log"), output);
+			const reference = inspectSubagentStatus({ dir, view: "transcript", lines: 500 }).content[0];
+			assert.ok(reference?.type === "text");
+			const body = reference.text.split(/Transcript tail from .*:\n/)[1];
+			assert.ok(body);
+			assert.ok(Buffer.byteLength(body) > 16384 && Buffer.byteLength(body) <= 32768);
+			const result = await makeExecutor(tempDir).execute("successful-transcript-budget", { action: "status", view: "transcript", dir, lines: 500 }, new AbortController().signal, undefined, makeCtx(tempDir));
+			assert.equal(result.isError, undefined);
+			assert.ok(result.content[0]?.text?.includes(reference.text));
+			assert.ok(body.endsWith("latest context"));
+			assert.equal(fs.readFileSync(path.join(dir, "output-0.log"), "utf8"), output);
+		} finally { fs.rmSync(dir, { recursive: true, force: true }); }
 	});
 });

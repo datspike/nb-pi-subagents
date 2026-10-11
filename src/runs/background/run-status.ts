@@ -357,7 +357,14 @@ function formatNestedExactStatus(rootRunId: string, run: NestedRunSummary): stri
 	return lines.join("\n");
 }
 
+/** Bounds transcript lookup errors without reducing the successful transcript body budget. */
 export function inspectSubagentStatus(params: RunStatusParams, deps: RunStatusDeps = {}): AgentToolResult<Details> {
+	const result = inspectSubagentStatusResult(params, deps);
+	if (params.view !== "transcript" || !result.isError) return result;
+	return { ...result, content: result.content.map((item) => item.type === "text" ? { ...item, text: boundStatusResponse(item.text) } : item) };
+}
+
+function inspectSubagentStatusResult(params: RunStatusParams, deps: RunStatusDeps): AgentToolResult<Details> {
 	const asyncDirRoot = deps.asyncDirRoot ?? DIRS.async;
 	const resultsDir = deps.resultsDir ?? DIRS.results;
 	const currentSessionId = deps.state?.currentSessionId ?? undefined;

@@ -701,7 +701,7 @@ function withSpawnBudgetStatus(
 		: item);
 	return {
 		...result,
-		content: content.map((item, index) => index === 0 && item.type === "text" ? { ...item, text: boundStatusResponse(item.text) } : item),
+		content,
 		details: { ...result.details, spawnBudget, activeAsyncCapacity },
 	};
 }
@@ -2812,6 +2812,8 @@ function formatStatusTargetLabel(params: Pick<SubagentParamsLike, "dir" | "index
 		target = params.view === "transcript" ? "active run" : "active runs";
 	}
 	if (params.view !== "transcript") return `Status target: ${target}`;
+	// The request caption is separate from the existing 32 KiB transcript body budget.
+	target = truncateUtf8Head(safeTerminalText(target), 512);
 	return `Transcript target: ${target}${params.index !== undefined ? ` · child ${params.index}` : ""}`;
 }
 
@@ -7089,7 +7091,7 @@ export function createSubagentExecutor(deps: ExecutorDeps): {
 						: item);
 					return {
 						...budgeted,
-						content: paramsWithResolvedCwd.view === "transcript" ? decorated : decorated.map((item, index) => index === 0 && item.type === "text" ? { ...item, text: boundStatusResponse(item.text) } : item),
+						content: paramsWithResolvedCwd.view === "transcript" && !budgeted.isError ? decorated : decorated.map((item, index) => index === 0 && item.type === "text" ? { ...item, text: boundStatusResponse(item.text) } : item),
 					};
 				};
 				const nestedScope = nestedResolutionScopeForExecutor(deps);

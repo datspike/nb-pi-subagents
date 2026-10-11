@@ -80,6 +80,16 @@ describe("async run status inspection", () => {
 		} finally { fs.rmSync(root, { recursive: true, force: true }); }
 	});
 
+	for (const value of ["x", "世界😀"]) it(`bounds a direct transcript mismatch error (multibyte=${value !== "x"})`, () => {
+		const asyncDirRoot = path.join(os.tmpdir(), "pi-transcript-mismatch-root");
+		const result = inspectSubagentStatus({ id: "missing-transcript-run", dir: path.join(asyncDirRoot, value.repeat(50000)), view: "transcript" }, { asyncDirRoot });
+		assert.equal(result.isError, true);
+		const text = textContent(result);
+		assert.ok(Buffer.byteLength(text, "utf8") <= 16384, `${Buffer.byteLength(text)} bytes`);
+		assert.match(text, /does not match|Unable to resolve|No run found/);
+		assert.doesNotMatch(text, /\uFFFD/u);
+	});
+
 	for (const source of ["output", "recent", "result", "nested"] as const) {
 		it(`bounds the aggregate rendered ${source} transcript, retaining newest context`, () => {
 			const root = fs.mkdtempSync(path.join(os.tmpdir(), "pi-transcript-body-budget-"));
