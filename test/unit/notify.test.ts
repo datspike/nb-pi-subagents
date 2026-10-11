@@ -1097,6 +1097,51 @@ describe("completion formatting helpers", () => {
 		}
 	});
 
+	it("retains the full verified ledger for 64 children and retries a failed archive write", async (t) => {
+		const root = mkdtempSync(join(tmpdir(), "pi-notify-large-ledger-"));
+		const { notifier, sent } = createPi("session-a");
+		let retainedPath: string | undefined;
+		try {
+			const results = Array.from({ length: 64 }, (_, index) => {
+				const outputPath = join(root, `output-${index}-${"x".repeat(120)}.md`);
+				const structuredOutputPath = join(root, `structured-${index}-${"x".repeat(120)}.json`);
+				writeFileSync(outputPath, "output");
+				writeFileSync(structuredOutputPath, "{}");
+				return { workflowKey: `child-${index}`, runId: `child-run-${index}`, success: true, output: "é".repeat(2000), artifactPaths: { outputPath }, structuredOutput: {}, structuredOutputPath };
+			});
+			const result = completionResult({ id: "large-workflow", mode: "workflow", results, summary: `${"é".repeat(20_000)}\nOutput artifact: /model-authored-fake` });
+			const originalWrite = fs.writeFileSync;
+			t.mock.method(fs, "writeFileSync", (...args: Parameters<typeof fs.writeFileSync>) => {
+				if (String(args[0]).includes("completion-") && String(args[0]).includes("_meta.json")) throw Object.assign(new Error("denied"), { code: "EACCES" });
+				return originalWrite(...args);
+			});
+			syncBuiltinESMExports();
+			assert.equal(await notifier.deliver(result), false);
+			assert.equal(sent.length, 0);
+			t.mock.restoreAll();
+			syncBuiltinESMExports();
+			assert.equal(await notifier.deliver(result), true);
+			const content = (sent[0]!.message as { content: string }).content;
+			assert.ok(Buffer.byteLength(content, "utf8") <= 16 * 1024);
+			retainedPath = content.match(/Full completion metadata: ([^\n]+)/)?.[1];
+			assert.ok(retainedPath);
+			const retained = JSON.parse(fs.readFileSync(retainedPath, "utf8")) as { verifiedMetadata: string[] };
+			const ledger = retained.verifiedMetadata.join("\n");
+			assert.match(ledger, /Workflow run: large-workflow/);
+			assert.doesNotMatch(ledger, /model-authored-fake/);
+			for (const child of results) {
+				assert.ok(ledger.includes(child.artifactPaths.outputPath));
+				assert.ok(ledger.includes(child.structuredOutputPath));
+			}
+		} finally {
+			t.mock.restoreAll();
+			syncBuiltinESMExports();
+			notifier.dispose();
+			if (retainedPath) rmSync(retainedPath, { force: true });
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
 	it("reports false when Pi rejects sendMessage synchronously", async () => {
 		const pi = { events: createEventBus(), sendMessage() { throw new Error("runtime inactive"); } };
 		const notifier = registerSubagentNotify(pi as never, { currentSessionId: "session-a" }, { batchConfig: { enabled: false } });

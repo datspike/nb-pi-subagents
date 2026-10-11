@@ -380,6 +380,7 @@ describe("finalizeSingleOutput", () => {
 
 	it("does not emit a truncation marker when no bytes are available", () => {
 		assert.equal(truncateUtf8Head("hello", 0), "");
+		for (const bytes of [1, 2, 3]) assert.ok(Buffer.byteLength(truncateUtf8Head("éhello", bytes), "utf8") <= bytes);
 	});
 
 	it("keeps worktree retrieval pointers when truncating a large suffix", () => {

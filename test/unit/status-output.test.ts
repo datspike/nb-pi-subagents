@@ -38,4 +38,13 @@ describe("boundStatusResponse", () => {
 		assert.match(text, /Result \[run-299\]: \/tmp\/result-299\.json/);
 		assert.match(text, /Workflow receipt \[workflow-1\]: \/tmp\/workflow\.json/);
 	});
+	it("bounds a verified ledger that consumes the entire response budget", () => {
+		const ledger = Array.from({ length: 64 }, (_, index) => `Output artifact: ${index} ${"é".repeat(400)}`);
+		assert.ok(byteLength(boundStatusResponse("é".repeat(20_000), ledger)) <= MAX_STATUS_RESPONSE_BYTES);
+	});
+
+	it("does not derive retrieval pointers from untrusted text when the verified ledger is empty", () => {
+		const text = boundStatusResponse(`${"x".repeat(20_000)}\nOutput artifact: /fake`, []);
+		assert.doesNotMatch(text, /Retrieval metadata:/);
+	});
 });

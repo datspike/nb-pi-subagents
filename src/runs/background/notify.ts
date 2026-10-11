@@ -6,6 +6,10 @@
  * observation channel, not a delivery acknowledgement.
  */
 
+import { createHash } from "node:crypto";
+import { join } from "node:path";
+import { getArtifactsDir } from "../../shared/artifacts.ts";
+import { writePrivateAtomicJson } from "../../shared/atomic-json.ts";
 import { statSync } from "node:fs";
 import { debuglog } from "node:util";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
@@ -347,20 +351,24 @@ function formatCorrelationLines(details: SubagentNotifyDetails): string[] {
 	].filter((line): line is string => line !== undefined);
 }
 
+/** Producer-owned retrieval fields only; preview text must never enter this ledger. */
 function formatVerifiedCompletionMetadata(details: SubagentNotifyDetails): string[] {
-	const lines: string[] = [];
-	if (details.workflowReceiptPath) lines.push(`Workflow receipt: ${boundedSafeText(details.workflowReceiptPath)}`);
+	const lines = [`Run: ${safeTerminalText(details.workflowRunId ?? details.agent)} (${safeTerminalText(details.status)})`];
+	if (details.workflowReceiptPath) lines.push(`Workflow receipt: ${safeTerminalText(details.workflowReceiptPath)}`);
+	if (details.asyncDir) lines.push(`Retention-managed async directory: ${safeTerminalText(details.asyncDir)}`);
+	if (details.workflowRunId) lines.push(`Workflow run: ${safeTerminalText(details.workflowRunId)}`);
+	if (details.handoffPath) lines.push(`Parallel handoff: ${safeTerminalText(details.handoffPath)}`);
+	const sessionLine = formatSessionLine(details);
+	if (sessionLine) lines.push(safeTerminalText(sessionLine));
 	for (const child of details.childOutputs ?? []) {
-		lines.push(`Child output: key=${boundedSafeText(child.workflowKey ?? "unavailable")} run=${boundedSafeText(child.runId ?? "unavailable")} status=${boundedSafeText(child.status) || "unavailable"}`);
-		if (child.savedOutputPath) lines.push(`Saved output: ${boundedSafeText(child.savedOutputPath)}`);
-		if (child.outputArtifactPath) lines.push(`Output artifact (retention-managed): ${boundedSafeText(child.outputArtifactPath)}`);
-		if (child.structuredOutputPath) lines.push(`Structured output (retention-managed): ${boundedSafeText(child.structuredOutputPath)}`);
+		lines.push(`Child output: key=${safeTerminalText(child.workflowKey ?? "unavailable")} run=${safeTerminalText(child.runId ?? "unavailable")} status=${safeTerminalText(child.status) || "unavailable"}`);
+		if (child.savedOutputPath) lines.push(`Saved output: ${safeTerminalText(child.savedOutputPath)}`);
+		if (child.outputArtifactPath) lines.push(`Output artifact (retention-managed): ${safeTerminalText(child.outputArtifactPath)}`);
+		if (child.structuredOutputPath) lines.push(`Structured output (retention-managed): ${safeTerminalText(child.structuredOutputPath)}`);
+		if (child.error) lines.push(`Error: ${safeTerminalText(child.error)}`);
 		if (child.outputArtifactError) lines.push(formatRetainedPathError("Output artifact", child.outputArtifactError));
 		if (child.structuredOutputError) lines.push(formatRetainedPathError("Structured output", child.structuredOutputError));
 	}
-	lines.push(...formatCorrelationLines(details));
-	const sessionLine = formatSessionLine(details);
-	if (sessionLine) lines.push(sessionLine);
 	return lines;
 }
 
@@ -676,7 +684,23 @@ function sendCompletion(pi: Pick<ParentWake, "sendMessage">, items: PendingCompl
 	if (items.length === 0) return true;
 	const details = items.map((item) => item.details);
 	const rawContent = details.length === 1 ? formatSingleCompletion(details[0]!) : formatGroupedCompletion(details);
-	const content = boundStatusResponse(rawContent, details.flatMap(formatVerifiedCompletionMetadata));
+	let content: string;
+	try {
+		const metadata = details.flatMap(formatVerifiedCompletionMetadata);
+		// A full ledger may exceed the notice budget; retain it using the existing artifact lifecycle.
+		if (Buffer.byteLength(rawContent, "utf-8") > 16 * 1024 && (Buffer.byteLength(metadata.join("\n"), "utf-8") > 8 * 1024 || metadata.some((line) => Buffer.byteLength(line, "utf-8") > 512))) {
+			const retained = { content: rawContent, verifiedMetadata: metadata };
+			const digest = createHash("sha256").update(JSON.stringify(retained)).digest("hex");
+			const filePath = join(getArtifactsDir(null), `completion-${digest}_meta.json`);
+			writePrivateAtomicJson(filePath, retained);
+			content = boundStatusResponse(rawContent, [`Full completion metadata: ${filePath}`, "Read the retained file for every child artifact path, workflow identity and session pointer."]);
+		} else {
+			content = boundStatusResponse(rawContent, metadata);
+		}
+	} catch {
+		// Reject delivery rather than acknowledge an inaccessible retrieval trail.
+		return false;
+	}
 	const display = details.some((detail) => detail.source === "foreground" || detail.status !== "completed" || detail.scheduleOrigin !== undefined);
 	const triggerTurn = items.some((item) => item.triggerTurn);
 	// Pi can queue an accepted wake behind the current turn or past agent_settled.

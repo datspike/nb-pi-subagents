@@ -186,6 +186,7 @@ export function truncateUtf8Head(value: string, maxBytes: number): string {
 	const bytes = Buffer.from(value, "utf-8");
 	if (bytes.length <= maxBytes) return value;
 	const markerBytes = Buffer.byteLength(INLINE_TRUNCATION_MARKER, "utf-8");
+	if (maxBytes < markerBytes) return "";
 	let end = Math.max(0, maxBytes - markerBytes);
 	while (end > 0 && (bytes[end]! & 0xc0) === 0x80) end -= 1;
 	return `${bytes.subarray(0, end).toString("utf-8")}${INLINE_TRUNCATION_MARKER}`;
