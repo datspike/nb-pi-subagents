@@ -534,7 +534,7 @@ The default injected guidance tells children to use `contact_supervisor` with `r
 ## `worktreeBaseDir`
 
 ```json
-{ "worktreeBaseDir": "/Users/matt/code/.worktrees/pi-subagents" }
+{ "worktreeBaseDir": "/Users/you/code/.worktrees/pi-subagents" }
 ```
 
 Sets the native dedicated root directory for `worktree: true` runs. Relative paths resolve from the repository root, `~/...` expands to your home directory, and `PI_SUBAGENTS_WORKTREE_DIR` is used when config is unset. When native allocation is used and both are unset, the dedicated root defaults to `{dirname(repoRoot)}/worktrees`, a `worktrees` directory alongside the repository checkout.

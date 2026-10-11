@@ -261,7 +261,7 @@ Native Pi and the six code-owned Claude Code, Codex, and Cursor profiles can run
 {
   "subagents": {
     "agentOverrides": { "claude-code": { "machine": "workmac" } },
-    "machines": { "workmac": { "cwd": "/home/nico/proj" } }
+    "machines": { "workmac": { "cwd": "/home/user/project" } }
   }
 }
 ```

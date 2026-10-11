@@ -8,13 +8,29 @@
  *   npx pi-subagents --remove # Remove the extension
  */
 
-import { execSync } from "node:child_process";
+import { execFileSync, execSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
 
 const EXTENSION_DIR = path.join(os.homedir(), ".pi", "agent", "extensions", "subagent");
-const REPO_URL = "https://github.com/nicobailon/pi-subagents.git";
+const REPO_URL = "https://github.com/datspike/nb-pi-subagents.git";
+
+const UPSTREAM_REPO_URL = "https://github.com/nicobailon/pi-subagents";
+
+const normalizeRemoteUrl = (remoteUrl) => remoteUrl.trim().replace(/\.git$/, "").replace(/^git@github\.com:/, "https://github.com/").replace(/^ssh:\/\/git@github\.com\//, "https://github.com/").replace(/\/$/, "");
+
+const migrateKnownUpstreamRemote = () => {
+  let originUrl;
+  try {
+    originUrl = execFileSync("git", ["remote", "get-url", "origin"], { cwd: EXTENSION_DIR, encoding: "utf-8" });
+  } catch {
+    return;
+  }
+  if (normalizeRemoteUrl(originUrl) !== UPSTREAM_REPO_URL) return;
+  console.log(`Switching origin to ${REPO_URL}...`);
+  execFileSync("git", ["remote", "set-url", "origin", REPO_URL], { cwd: EXTENSION_DIR, stdio: "inherit" });
+};
 
 const args = process.argv.slice(2);
 const isRemove = args.includes("--remove") || args.includes("-r");
@@ -60,6 +76,7 @@ if (fs.existsSync(EXTENSION_DIR)) {
 	if (isGitRepo) {
 		console.log("Updating existing installation...");
 		try {
+			migrateKnownUpstreamRemote();
 			execSync("git pull", { cwd: EXTENSION_DIR, stdio: "inherit" });
 			console.log("\npi-subagents updated");
 		} catch (err) {
