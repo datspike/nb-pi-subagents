@@ -102,7 +102,7 @@ describe("registered subagent tool description", () => {
 		for (const description of [DEFAULT_SUBAGENT_TOOL_DESCRIPTION, FULL_SUBAGENT_TOOL_DESCRIPTION, COMPACT_SUBAGENT_TOOL_DESCRIPTION]) {
 			for (const contract of [
 				/one child with \{agent,task\}/,
-				/write one ```js block in this reply, then call subagent\(\{workflow:true\}\)/,
+				/include exactly one closed ```js workflow block.*exactly one plain ```js block is also accepted.*same assistant message as subagent\(\{workflow:true\}\).*visible reply must contain the script itself.*workflow:true alone never launches children.*write it to a file and pass workflow:'\.\/path\.js'/,
 				/workflow:'path\.js' \(any value with '\/'\) loads a script from cwd; any other string names a resource/,
 				/agent\/task exclude workflow; task excludes action/,
 				/args are persisted, so never put secrets in them/,
