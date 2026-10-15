@@ -41,6 +41,8 @@ interface PackageManifest {
 	version?: unknown;
 	main?: unknown;
 	exports?: unknown;
+	dependencies?: Record<string, unknown>;
+	optionalDependencies?: Record<string, unknown>;
 }
 
 function readManifest(packageDir: string): PackageManifest | undefined {
@@ -137,11 +139,16 @@ export function resolveHostPeerAliases(piPackageRoot: string): { aliases: Record
 	const aliases: Record<string, string> = {};
 	const missing: string[] = [];
 	const hostManifest = readManifest(piPackageRoot);
-	// Only known stable pre-chord versions may omit it. Unknown/prerelease
-	// hosts retain the required aliases, rather than hiding a broken install.
-	const stableVersion = typeof hostManifest?.version === "string" ? /^0\.(\d+)\.\d+$/.exec(hostManifest.version) : null;
-	const isPreChord = stableVersion !== null && Number(stableVersion[1]) < 85;
-	const required: ReadonlyArray<(typeof HOST_PEER_ALIASES)[number]> = [...HOST_PEER_ALIASES, ...(isPreChord ? [] : CHORD_PEER_ALIASES)];
+	// Stable 1.x hosts may remove chord; their dependency manifest is authoritative.
+	// Unknown/prerelease hosts retain the historical fail-closed requirement.
+	const stableVersion = typeof hostManifest?.version === "string" ? /^(\d+)\.(\d+)\.\d+$/.exec(hostManifest.version) : null;
+	const isPreChord = stableVersion !== null && Number(stableVersion[1]) === 0 && Number(stableVersion[2]) < 85;
+	const dependencies = hostManifest?.dependencies;
+	const isChordlessHost = stableVersion !== null && Number(stableVersion[1]) >= 1
+		&& dependencies !== null && typeof dependencies === "object" && !Array.isArray(dependencies)
+		&& !Object.hasOwn(dependencies, "@earendil-works/chord")
+		&& !Object.hasOwn(hostManifest?.optionalDependencies ?? {}, "@earendil-works/chord");
+	const required: ReadonlyArray<(typeof HOST_PEER_ALIASES)[number]> = [...HOST_PEER_ALIASES, ...(isPreChord || isChordlessHost ? [] : CHORD_PEER_ALIASES)];
 	for (const { specifier, pkg, subpath, optional } of required) {
 		const packageDir = findPeerPackageDir(piPackageRoot, pkg, hostManifest?.name);
 		const target = packageDir ? resolvePackageSubpath(packageDir, subpath) : undefined;

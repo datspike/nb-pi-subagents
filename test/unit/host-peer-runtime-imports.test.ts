@@ -223,6 +223,15 @@ test("chord is omitted before 0.85, but required host-first on chord-era and unk
 			const result = resolveHostPeerAliases(host);
 			for (const specifier of [chord, `${chord}/context`]) assert.ok(result.missing.includes(specifier), version);
 		}
+		for (const declared of [false, true]) {
+			writePackage(host, "@earendil-works/pi-coding-agent", "1.3.0", hostExports);
+			const manifestPath = path.join(host, "package.json");
+			const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+			manifest.dependencies = declared ? { [chord]: "1.3.0" } : {};
+			fs.writeFileSync(manifestPath, JSON.stringify(manifest));
+			const resolved = resolveHostPeerAliases(host);
+			assert.deepEqual(resolved.missing, declared ? [chord, `${chord}/context`] : []);
+		}
 		writePackage(host, "@earendil-works/pi-coding-agent", "0.85.1", hostExports);
 		writePackage(hostChord, chord, "0.85.1", { ".": "./index.mjs", "./context": "./context.mjs" });
 		let result = resolveHostPeerAliases(host);
