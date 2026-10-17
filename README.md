@@ -4,144 +4,144 @@
 
 # pi-subagents
 
-`pi-subagents` lets Pi delegate work to focused child agents. Use it for code review, scouting, implementation, parallel audits, saved workflows, background jobs, and anything else that benefits from a second or third set of model eyes.
+`pi-subagents` передаёт отдельные задачи дочерним агентам Pi. Это удобно для review кода, разведки, реализации, параллельных проверок, сохранённых workflow и фоновой работы.
 
-## What this fork is
+## Что это за форк
 
-This repository is an independent development line of [`pi-subagents`](https://github.com/nicobailon/pi-subagents). It selectively ports useful ideas from the original project and develops them here when they improve the fork's goals; it is not intended to remain a byte-for-byte mirror or a one-to-one patch series against one upstream release.
+Это независимая линия [`pi-subagents`](https://github.com/nicobailon/pi-subagents) для `datspike/nb-pi-subagents`.
+Здесь выборочно переносятся полезные изменения upstream и развиваются собственные решения. Форк не обязан оставаться точной копией или последовательностью патчей к одной версии upstream.
 
-The core delegation model remains familiar: foreground and background children, builtin agents, workflows, missions, FleetView, watchdog, and the extension API. The fork's main functional focus is:
+Основная модель делегации сохраняется: foreground и background children, builtin agents, workflows, missions, FleetView, watchdog и extension API.
+Главные направления форка:
 
-| Focus | What changes for users |
-|-------|------------------------|
-| Model-facing context | The fork keeps a compact delegation surface and develops bounded, agent-facing guidance so detailed instructions do not need to be sent in every request. |
-| Agent guide | `subagent({ action: "guide" })` and `/subagents-guide` serve packaged guides by topic and section, with bounded indexes and responses. The guide is usable without loading the package skill. |
-| Trust boundaries | When a project is not trusted, project settings, agents, chains, packages, and skills are ignored. `agentScope: "project"` fails closed; user and builtin sources remain available. |
-| Output and recovery | Progress, status, completion, intercom, and retained transcript views are bounded. Truncation keeps useful metadata and marks incomplete text; failed output or artifact saves stay distinguishable from successful results. |
-| Run reliability | Per-run result leases and serialized promotion/retirement protect newer payloads from stale or replaced results; detached or paused runs retain recovery metadata. |
-| Review and evaluation | Evaluation metadata and child command controls are carried through delegation, while internal review/evaluation fields stay out of the model-facing schema. |
+| Направление | Что меняется для пользователя |
+|---|---|
+| Контекст для модели | Поверхность делегации остаётся компактной, а подробные инструкции выдаются ограниченными порциями, когда они нужны. |
+| Справка для агентов | `subagent({ action: "guide" })` и `/subagents-guide` отдают справку по topic и section с ограниченным объёмом. Она работает и без package skill. |
+| Границы доверия | Если проект не trusted, его settings, agents, chains, packages и skills не используются. `agentScope: "project"` завершается с отказом; user и builtin sources остаются доступны. |
+| Результаты и восстановление | Progress, status, completion, intercom и retained transcript views ограничены по размеру. Усечение сохраняет полезные метаданные и явно помечает неполный текст. Ошибка сохранения output или artifact не маскируется под успешный результат. |
+| Надёжность запусков | Result leases и последовательное продвижение результатов защищают новые payload от устаревших или заменённых данных. Detached и paused runs сохраняют сведения для восстановления. |
+| Review и evaluation | Метаданные проверки и controls дочерних команд проходят через делегацию, но внутренние поля review/evaluation не попадают в model-facing schema. |
 
-The fork can diverge from the original project and can forward-port selected upstream improvements later. Check the documentation and release notes for the behavior of the version you install; this section describes the fork's own direction, not a promise of permanent uniqueness versus upstream.
+Форк может расходиться с оригиналом и позже выборочно переносить новые изменения upstream. Проверяй документацию и release notes установленной версии: этот раздел описывает направление форка, а не обещает постоянную уникальность.
 
 <https://github.com/user-attachments/assets/702554ec-faaf-4635-80aa-fb5d6e292fd1>
 
-## Install
+## Установка
 
 ```bash
 pi install git:github.com/datspike/nb-pi-subagents.git
 ```
 
-That is the only required step. Background children use the host's SDK: npm Pi keeps its detached Node runner; the official Pi 0.86.1 Linux x64 standalone release loads the same runner through Pi's embedded SDK, without a separate SDK install. See [Standalone background execution](docs/standalone-background.md) for the supported boundary and validation gate.
+Этого достаточно. Background children используют SDK хост-системы: npm Pi сохраняет свой detached Node runner, а официальный standalone-релиз Pi 0.86.1 для Linux x64 загружает тот же runner через встроенный SDK Pi. Поддерживаемые границы и проверка описаны в [Standalone background execution](docs/standalone-background.md).
 
-## Try this first
+## Первый запуск
 
-You do not need to create agents, write config, or learn slash commands. After installing, ask Pi in plain language:
+Не нужно заранее создавать agents, писать config или учить slash-команды. После установки достаточно попросить Pi обычными словами:
 
 ```text
-Use reviewer to review this diff.
+Используй reviewer, чтобы проверить этот diff.
 ```
 
 ```text
-Ask oracle for a second opinion on my current plan. Challenge assumptions and tell me what I might be missing.
+Попроси oracle проверить мой план. Пусть он оспорит допущения и скажет, что я мог упустить.
 ```
 
 ```text
-Use scout to understand this code based on our discussion, then ask me clarification questions.
+Попроси scout разобраться в этом коде с учётом нашей беседы, а затем задать мне уточняющие вопросы.
 ```
 
 ```text
-Run parallel reviewers: one for correctness, one for tests, and one for unnecessary complexity.
+Запусти параллельные проверки: корректность, тесты и лишняя сложность.
 ```
 
-That is enough to start. Pi decides whether to call the `subagent` tool, which agent to use, and how to compose the work.
+Этого достаточно. Pi сам решает, вызывать ли `subagent`, какого agent выбрать и как собрать работу.
 
-## How it works
+## Как это работает
 
-Pi is the parent session. A subagent is a focused child Pi session with its own job.
+Pi — родительская сессия. Subagent — отдельная дочерняя сессия Pi со своей задачей.
 
-When you ask for a subagent, Pi starts the child, gives it the task, and brings the result back. Foreground children run as sessions inside the parent Pi process and stream in the conversation. Background children run as sessions inside a detached runner process that keeps working and can be checked later.
+После запроса на делегацию Pi запускает child, передаёт ему задачу и возвращает результат. Foreground children работают внутри процесса родительской Pi и показывают ход работы в беседе. Background children продолжают работу в detached runner и остаются доступными для проверки.
 
-Installing the extension does not start an automatic reviewer in the background. When the session's model can take a new tool mid-conversation, fresh parent sessions initially expose the small `subagents_enable` loader instead of the full `subagent` schema. When your request or applicable instructions authorize delegation, Pi can call the loader itself; the unchanged `subagent` tool is available on the next model request. With other models, fresh sessions start with `subagent` active, because adding a tool later would make the provider miss its prompt cache. The [`toolActivation`](docs/configuration.md#toolactivation) setting changes this. Complexity alone does not authorize delegation. `bg_wait` and supervisor replies remain available without activation.
+Установка extension сама по себе не запускает reviewer в фоне. В свежей сессии Pi сначала может показать небольшой loader `subagents_enable`, а полный `subagent` станет доступен после разрешённой делегации. Для других моделей `subagent` доступен сразу, чтобы не ломать prompt cache. Сложность задачи сама по себе не даёт права на делегацию. `bg_wait` и ответы supervisor доступны и без activation.
 
-If you want every implementation reviewed, say so in your prompt or project instructions:
+Если каждую реализацию нужно проверять, укажи это в задаче или правилах проекта:
 
 ```text
-When you finish implementing, run a reviewer subagent before summarizing.
+После реализации всегда запускай reviewer.
 ```
 
-## Builtin agents
+## Встроенные агенты
 
-The extension ships with agents you can use immediately:
+Extension сразу поставляет несколько ролей:
 
-| Agent | Use it when you want... |
-|-------|--------------------------|
-| `scout` | Fast local codebase recon: relevant files, entry points, data flow, risks. |
-| `researcher` | Web/docs research with sources and a concise research brief. Requires [pi-web-access in the child](docs/agents.md#web-research-prerequisites). |
-| `evidence-auditor` | Independently checks whether important research claims are supported by their sources. Requires [pi-web-access in the child](docs/agents.md#web-research-prerequisites). |
-| `worker` | Implementation work. Edits files, validates, escalates unapproved decisions instead of guessing. |
-| `reviewer` | Code review and small fixes against the task/plan, tests, edge cases, and simplicity. |
-| `oracle` | A second opinion before acting. Challenges assumptions without editing. |
-| `delegate` | A lightweight general delegate that behaves close to the parent session. |
+| Agent | Когда использовать |
+|---|---|
+| `scout` | Быстро найти нужные файлы, точки входа, поток данных и риски. |
+| `researcher` | Найти внешнюю документацию и источники. Нужен [pi-web-access](docs/agents.md#web-research-prerequisites). |
+| `evidence-auditor` | Независимо проверить claims и источники готового research brief. Нужен [pi-web-access](docs/agents.md#web-research-prerequisites). |
+| `worker` | Внести согласованные изменения, проверить их и не угадывать при незакрытом решении. |
+| `reviewer` | Проверить реализацию, тесты, крайние случаи и лишнюю сложность. |
+| `oracle` | Получить второе мнение до изменения; он не редактирует файлы. |
+| `delegate` | Передать общую задачу агенту, который работает близко к родительской сессии. |
 
-Rule of thumb: `scout` before you understand the code, `researcher` before you trust external facts, `evidence-auditor` before you rely on important research, `worker` to implement, `reviewer` to check, and `oracle` when the decision itself feels risky.
+Практическое правило: сначала `scout`, затем `researcher` для внешних фактов, `evidence-auditor` для важных claims, `worker` для реализации, свежий `reviewer` для проверки и `oracle`, когда нужно оспорить решение.
 
-## Common workflows
+## Типовые workflow
 
-The package includes `/council` and `council-mode`, plus documented model-based
-`council-*` profile examples that you add in your own agent directory.
+В package есть `/council` и `council-mode`, а также примеры профилей `council-*`, которые можно добавить в свой каталог agents.
 
-| Want | Ask naturally |
-|------|---------------|
-| Get a second opinion | "Ask oracle to review this plan and challenge assumptions." |
-| Solve a hard problem | "Use oracle to investigate this bug before we edit." |
-| Review a diff | "Use reviewer to review this diff." |
-| Run parallel reviewers | "Run reviewers for correctness, tests, and cleanup." |
-| Debate a material decision | "Use `/council` with model-based advisors to compare this decision." |
-| Implement then review | "Implement this, then review it." |
-| Review until clean | "Run a review loop on this change with a max of 3 rounds." |
-| Execute a plan carefully | "Have worker implement this approved plan, then run reviewers and apply the feedback." |
-| Scout before planning | "Use scout to inspect the auth flow before planning." |
-| Run in the background | "Run this in the background." |
-| Use a saved workflow | "Run the review chain on this branch." |
-| Browse agents | "Show me the available subagents." |
-| See running work | "Show active async runs." or "Show the subagent fleet." |
-| Check setup | "Check whether subagents are configured correctly." |
+| Что нужно | Как попросить |
+|---|---|
+| Второе мнение | «Попроси oracle проверить этот план и найти слабые места». |
+| Сложная диагностика | «Используй oracle, чтобы изучить ошибку до изменения кода». |
+| Проверка diff | «Попроси reviewer проверить этот diff». |
+| Несколько проверок | «Запусти reviewers для корректности, тестов и лишней сложности». |
+| Обсуждение решения | «Используй `/council`, чтобы сравнить варианты». |
+| Реализация и проверка | «Реализуй это, затем проверь результат». |
+| Повторное review | «Повторяй review, пока не останется проблем, но не более 3 раундов». |
+| Исполнение утверждённого плана | «Пусть worker реализует согласованный план, затем запусти свежих reviewers». |
+| Разведка перед планом | «Попроси scout изучить поток авторизации перед планированием». |
+| Фоновая работа | «Запусти это в фоне». |
+| Список агентов | «Покажи доступных subagents». |
+| Текущие запуски | «Покажи активные async runs». |
+| Проверка настройки | «Проверь, правильно ли настроены subagents и intercom». |
 
-For implementation work, the recommended loop is `clarify → scout → worker → fresh reviewers → worker`. Packaged prompt shortcuts like `/parallel-review` and `/review-loop` make these patterns repeatable — see [Workflows](https://github.com/datspike/nb-pi-subagents/blob/main/docs/workflows.md).
+Для реализации обычно подходит цепочка `clarify → scout → worker → свежие reviewers → worker`. Готовые `/parallel-review` и `/review-loop` описаны в [Workflows](https://github.com/datspike/nb-pi-subagents/blob/main/docs/workflows.md).
 
-## Where running work shows up
+## Где видна работа
 
-Foreground runs stream progress in the conversation. Background runs keep working after control returns to you.
+Foreground runs показывают ход работы в беседе. Background runs продолжаются после возврата управления.
 
-In the TUI, a persistent FleetView below the editor keeps active work visible. `/subagents-fleet` opens a live inspector where you can browse children, read transcripts, steer a running child, or stop a run. You can also just ask: "Show me the current async runs."
+В TUI под редактором есть FleetView с текущими запусками. `/subagents-fleet` открывает подробный просмотр: там можно изучить children, transcripts, направить или остановить run. Можно также попросить Pi: «Покажи текущие async runs».
 
-Details, keybindings, and the machine-readable run artifacts are in [Observability](https://github.com/datspike/nb-pi-subagents/blob/main/docs/observability.md).
+Подробнее о run artifacts и наблюдаемости — в [Observability](https://github.com/datspike/nb-pi-subagents/blob/main/docs/observability.md).
 
-For bounded orchestration, `maxSubagentSpawnsPerRun` limits cumulative logical children in one run tree. It defaults to 64 and stays separate from active concurrency and the session-wide cumulative spawn budget. See [Configuration](https://github.com/datspike/nb-pi-subagents/blob/main/docs/configuration.md#maxsubagentspawnsperrun).
+Для ограниченного orchestration `maxSubagentSpawnsPerRun` задаёт общий лимит children в одном дереве runs. По умолчанию он равен 64 и не смешивается с active concurrency и общим лимитом spawn для сессии. Подробности — в [Configuration](https://github.com/datspike/nb-pi-subagents/blob/main/docs/configuration.md#maxsubagentspawnsperrun).
 
-## If something feels off
+## Если что-то пошло не так
 
 ```text
 /subagents-doctor
 ```
 
-or ask: "Check whether subagents and intercom are set up correctly."
+Или попроси: «Проверь, правильно ли настроены subagents и intercom».
 
-For installed-version help, use `/subagents-guide [topic]` or `subagent({ action: "guide", topic: "workflows" })`. The default topic is `overview`; available topics are `overview`, `workflows`, `agents`, `missions`, `observability`, `tool-reference`, `configuration`, `models`, `watchdog`, `extension-api`, and `council`.
+Для справки по установленной версии используй `/subagents-guide [topic]` или `subagent({ action: "guide", topic: "workflows" })`. По умолчанию открывается `overview`. Доступны `overview`, `workflows`, `agents`, `missions`, `observability`, `tool-reference`, `configuration`, `models`, `watchdog`, `extension-api` и `council`.
 
-## Documentation
+## Документация
 
-The full reference lives in `docs/`:
+Полная справка находится в `docs/`:
 
-| Doc | What's in it |
-|-----|--------------|
-| [Fork context](https://github.com/datspike/nb-pi-subagents/blob/main/docs/fork-context.md) | Owner-directed rules for interpreting upstream material, selecting changes, and separating evidence from inference and unknown. |
-| [Agents](https://github.com/datspike/nb-pi-subagents/blob/main/docs/agents.md) | Custom agents, frontmatter reference, overriding builtins, tools, extensions, skills, per-agent memory. |
-| [Models](https://github.com/datspike/nb-pi-subagents/blob/main/docs/models.md) | Single-model selection and launch, defaults, per-role overrides, recommended tiering, thinking levels, model scope enforcement, profiles. |
-| [Workflows](https://github.com/datspike/nb-pi-subagents/blob/main/docs/workflows.md) | Orchestration patterns, prompt shortcuts, scripted workflows, worktree isolation, child-to-parent coordination, the recursion guard. |
-| [Watchdog](https://github.com/datspike/nb-pi-subagents/blob/main/docs/watchdog.md) | The opt-in adversarial change reviewer, scope monitoring, LSP checks, and child tool permissions. |
-| [Tool reference](https://github.com/datspike/nb-pi-subagents/blob/main/docs/tool-reference.md) | Every `subagent` parameter, management actions, status/control actions, acceptance gates, external CLI runners. |
-| [Observability](https://github.com/datspike/nb-pi-subagents/blob/main/docs/observability.md) | FleetView, the fleet inspector, lifecycle artifacts, events, logs, session sharing. |
-| [Missions and schedules](https://github.com/datspike/nb-pi-subagents/blob/main/docs/missions.md) | Durable mission records, delivery receipts, timed and recurring runs. |
-| [Configuration](https://github.com/datspike/nb-pi-subagents/blob/main/docs/configuration.md) | Every `config.json` key and environment variable. |
-| [Extension API](https://github.com/datspike/nb-pi-subagents/blob/main/docs/extension-api.md) | The RPC, delegation API, preflight, capability ceilings, [trusted workflow resources](docs/extension-api.md#trusted-workflow-resources), background-work providers, Herdr integration. |
+| Документ | Содержание |
+|---|---|
+| [Контекст форка](https://github.com/datspike/nb-pi-subagents/blob/main/docs/fork-context.md) | Как читать upstream, выбирать изменения и разделять evidence, inference и unknown. |
+| [Agents](https://github.com/datspike/nb-pi-subagents/blob/main/docs/agents.md) | Custom agents, frontmatter, builtin agents, tools, extensions, skills и per-agent memory. |
+| [Models](https://github.com/datspike/nb-pi-subagents/blob/main/docs/models.md) | Выбор модели, defaults, overrides, thinking levels, model scope и profiles. |
+| [Workflows](https://github.com/datspike/nb-pi-subagents/blob/main/docs/workflows.md) | Orchestration, prompt shortcuts, scripted workflows, worktree isolation и передача результата. |
+| [Watchdog](https://github.com/datspike/nb-pi-subagents/blob/main/docs/watchdog.md) | Необязательная проверка изменений, scope monitoring, LSP checks и права дочерних tools. |
+| [Tool reference](https://github.com/datspike/nb-pi-subagents/blob/main/docs/tool-reference.md) | Параметры `subagent`, management actions, status/control, acceptance gates и external CLI runners. |
+| [Observability](https://github.com/datspike/nb-pi-subagents/blob/main/docs/observability.md) | FleetView, просмотр fleet, transcripts, lifecycle artifacts, events и logs. |
+| [Missions and schedules](https://github.com/datspike/nb-pi-subagents/blob/main/docs/missions.md) | Durable missions, delivery receipts, timed и recurring runs. |
+| [Configuration](https://github.com/datspike/nb-pi-subagents/blob/main/docs/configuration.md) | Все keys `config.json` и переменные окружения. |
+| [Extension API](https://github.com/datspike/nb-pi-subagents/blob/main/docs/extension-api.md) | RPC, delegation API, preflight, capability ceilings, trusted workflow resources, background-work providers и Herdr integration. |

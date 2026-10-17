@@ -1,21 +1,21 @@
-# AGENTS.md
+# Правила для агентов
 
-Agents working in this repository must read [VISION.md](VISION.md) and [docs/fork-context.md](docs/fork-context.md) before making product, architecture, scope, or backlog-disposition decisions.
-VISION.md is the acceptance policy for this project; `docs/fork-context.md` explains how this owner-directed fork interprets upstream material and chooses evidence. Use both to judge a proposed change, issue, or PR.
-This file intentionally does not duplicate user-global or tool-level instructions.
+Перед решением о продукте, архитектуре, области работы или списке задач прочитай [VISION.md](VISION.md) и [docs/fork-context.md](docs/fork-context.md).
+`VISION.md` задаёт критерии приёмки проекта, а `docs/fork-context.md` объясняет, как читать материалы upstream и выбирать решения в этом форке.
+Этот файл не дублирует общие правила Pi и пользователя.
 
-## Fork context overlay
+## Контекст форка
 
-- This is the `datspike/nb-pi-subagents` fork, not a neutral upstream mirror. Local user intent, `VISION.md`, and `docs/fork-context.md` govern decisions; upstream code and prose are reference evidence.
-- Before proposing a new mechanism, inspect the existing path, consumers, tests, and docs. Prefer the smallest change that proves one invariant.
-- Keep evidence, inference, and unknown separate. Do not promote private memory, a single failure, or an upstream preference into a tracked rule without checking scope and support.
+- Это форк `datspike/nb-pi-subagents`, а не нейтральная копия upstream. Решения определяют текущая задача пользователя, `VISION.md` и `docs/fork-context.md`; код и тексты upstream — проверяемые технические источники.
+- Перед новым механизмом проверь существующий путь, его потребителей, тесты и документацию. Выбирай самое маленькое изменение, которое доказывает нужный инвариант.
+- Разделяй `evidence`, `inference` и `unknown`. Не превращай личную память, один сбой или предложение upstream в правило проекта без проверки области действия и основания.
 
-## Boundaries and sources of truth
+## Границы и источники истины
 
-- `VISION.md` decides whether a change fits; tests and command output prove behavior. `AGENTS.local.md`, `.task_files/`, `.runtime/`, and `.pi/` are workstation-local planning and run state: they never enter Git, the npm package, or public docs.
-- Changes to the public tool contract, schemas, persistence, lifecycle, or launch API need explicit owner approval before implementation; process and documentation fixes do not.
+- `VISION.md` отвечает за соответствие изменения проекту; тесты и вывод команд доказывают поведение. `AGENTS.local.md`, `.task_files/`, `.runtime/` и `.pi/` — локальное состояние рабочей станции: они не входят в Git, npm-пакет и публичную документацию.
+- Изменения public tool contract, схем, persistence, lifecycle или launch API требуют отдельного одобрения владельца. Исправления процесса и документации такого одобрения не требуют.
 
 ## Evidence, inference, unknown
 
-- Planning documents, cards, and status reports separate evidence (checked facts with a reproducible source), inference (reasoned conclusions), and unknown (undecided items).
-- A completion claim needs evidence or an explicit blocked state; inference is never reported as a proven result, and an undecided item is never reported as a decision.
+- В планах, карточках и отчётах отдельно указывай `evidence` — проверенный факт с воспроизводимым источником, `inference` — вывод, и `unknown` — то, что пока не установлено.
+- Нельзя объявлять работу завершённой без evidence или явного `blocked` состояния. Вывод не выдавай за доказанный факт, а нерешённый вопрос — за принятое решение.

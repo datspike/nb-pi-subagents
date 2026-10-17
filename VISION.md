@@ -1,104 +1,106 @@
-# Vision
+# Видение проекта
 
-## Fork ownership and context
+## Контекст форка
 
-This repository is the `datspike/nb-pi-subagents` development line, maintained for one owner's working style and quality bar. It is not required to preserve upstream ideology or remain a one-to-one mirror. Upstream code, tests, issues, and documentation are technical reference material; local user intent, `AGENTS.md`, and `docs/fork-context.md` decide which changes fit and how they are accepted.
+Это рабочая линия `datspike/nb-pi-subagents`, а не нейтральное зеркало `nicobailon/pi-subagents`.
+Форк подстраивается под рабочий способ владельца и может расходиться с upstream. Код, тесты, issues и документация upstream нужны для проверки совместимости и доступных механизмов, но не задают наши цели, качество и правила приёмки.
 
-When a source or proposal is uncertain, separate checked evidence, inference, and unknown. Do not copy private memory or an upstream process into the repository unless the durable rule, scope, and supporting evidence are clear.
+Если источник или предложение неясны, разделяй `evidence`, `inference` и `unknown`. Не переноси в проект личную память или процесс upstream, пока не понятны устойчивое правило, его область действия и подтверждающие факты.
 
-## What pi-subagents is
+## Что делает `pi-subagents`
 
-pi-subagents lets one Pi session delegate focused work to child agents with supervision, evidence, and control.
-It serves a single Pi operator first: one person who wants more leverage from one session without losing control of what runs in their name.
-It stays flexible enough for other people and other workflows, but it does not redesign itself around them.
-It owns the Pi delegation layer: child launch contracts, workflow orchestration, supervision, observability, and result handoff.
+`pi-subagents` позволяет одной сессии Pi передавать отдельные задачи дочерним агентам и при этом сохранять контроль, наблюдаемость и `evidence`.
+Главный пользователь — один оператор Pi, которому нужно больше рычагов, но не нужна потеря контроля над действиями от его имени.
+Другие сценарии допустимы, однако проект не перестраивается под них.
+Проект отвечает за слой делегации Pi: договор запуска дочерних агентов, сценарии работы, контроль, наблюдаемость и передачу результата.
 
-## One parent, many focused children
+## Один родитель и несколько задач
 
-The parent session stays the orchestrator and the decision maker.
-Each child gets a clear task, a bounded contract, and a defined way to hand its result back.
-Complex semi-autonomous work, such as repository backlog maintenance or several unrelated tasks running in parallel worktrees, composes from these same parts.
-Those workflows are capabilities the system must support well, not the product identity.
+Родительская сессия остаётся координатором и принимает решения.
+Каждый дочерний агент получает понятную задачу, ограниченный договор и ясный способ вернуть результат.
+Сложные процессы, например работа со списком задач или несколько независимых задач в отдельных `worktree`, собираются из тех же примитивов.
+Это возможности системы, а не её отдельная идентичность.
 
-## Authority comes from clarity
+## Полномочия следуют из ясности
 
-Authority is moderate, not maximal in either direction.
-When user intent and policy are clear, safe routine authority can be inferred without a fresh ask.
-A blocked child can ask its supervisor to unblock it before interrupting the user.
-User and project instructions can tighten or loosen this authority, and the system respects both directions.
+Полномочия должны быть достаточными, но не чрезмерными.
+Когда намерение пользователя и правила понятны, безопасные обычные действия можно выполнять без нового вопроса.
+Если дочерний агент заблокирован, он может попросить родителя снять блокировку до того, как прерывать пользователя.
+Правила пользователя и проекта могут сузить или расширить эти полномочия; система соблюдает оба направления.
 
-## Evidence closes work
+## Работа закрывается `evidence`
 
-A child saying it is done is not enough.
-Completion needs evidence: concrete outputs, changed files where change was expected, validation results, or an explicit blocked state.
-When behavior cannot be proven, the system fails closed instead of reporting optimistic success.
+Сообщения агента «готово» недостаточно.
+Нужны конкретный результат, изменённые файлы там, где ожидалось изменение, результаты проверки или явное состояние `blocked`.
+Если поведение нельзя доказать, система не должна выдавать оптимистичный успех.
 
-## Compose before inventing
+## Сначала существующие примитивы
 
-Existing primitives come first.
-A new mode, runner, or abstraction is justified only when current primitives cannot honestly express the needed behavior.
-Before adding anything, name the existing path that produces the same outcome: a config value, a reload, an instruction, a flag, or a primitive that already exists.
-If that path exists and costs the operator one ordinary action, the request is already satisfied and the change does not fit.
-A second path to the same outcome is only justified when the existing one loses work, cannot express the need, or is unavailable where the need occurs.
-Convenience alone is not enough; every parallel path adds docs, status text, tests, and a new way for behavior to disagree with configuration.
+Сначала найди уже существующий путь к нужному результату.
+Новый режим, исполнитель или слой абстракции оправдан только тогда, когда текущих примитивов недостаточно.
+До добавления нового механизма назови старый путь: настройку, перезагрузку, инструкцию, флаг или другой готовый примитив.
+Если он даёт тот же результат за одно обычное действие оператора, второй путь не нужен.
+Он допустим только если старый путь теряет работу, не выражает потребность или недоступен в нужном месте.
+Удобство само по себе недостаточно: каждый параллельный путь добавляет документацию, статус, тесты и новые способы расхождения поведения с настройками.
 
-## Compatibility is explicit
+## Совместимость должна быть осознанной
 
-Default to hard cutovers when replacing a tool, option, behavior, or public surface.
-Do not keep aliases, migration shims, legacy code paths, or compatibility modes unless the owner asks for them or the release contract requires them.
-Compatibility has a cost: extra docs, tests, status text, support paths, and future ambiguity.
-When that cost is not deliberately accepted, remove the old path cleanly and make the new contract obvious.
+При замене инструмента, опции, поведения или открытого интерфейса по умолчанию выбирай прямой переход.
+Не сохраняй alias, migration shim, legacy path или compatibility mode без просьбы владельца или требования правил выпуска.
+Совместимость стоит дорого: нужны дополнительные документы, тесты, статусы и пути поддержки.
+Если эта цена не принята явно, старый путь нужно удалить, а новый договор сделать однозначным.
 
-Tests should prove the current contract.
-Do not add defensive tests that preserve removed behavior, stale migration paths, or compatibility the project no longer wants.
-For removals, update or delete obsolete assertions instead of making production code serve them.
+Тесты должны доказывать текущий договор.
+Не добавляй defensive tests ради удалённого поведения, старой миграции или совместимости, которую проект больше не поддерживает.
+При удалении поведения обновляй или удаляй старые assertions, а не возвращай старый путь в production code.
 
-## Scope must earn size
+## Размер изменения должен быть оправдан
 
-Pull requests should be narrow enough to review with confidence.
-A large diff is a warning sign, not proof of rigor.
-Size is acceptable only when the issue, design, and owner approval justify it.
+PR должен быть достаточно узким для уверенного review.
+Большой diff — повод искать лишний объём, а не доказательство качества.
+Широкое изменение допустимо только при понятной проблеме, решении и одобрении владельца.
 
-Broad changes need approval before they expand across launch paths, public APIs, persistence, or runner lifecycle code.
-When a proposal touches those surfaces without that approval, the right response is adversarial review and reduction.
-Each PR should prove one clear invariant and stop before it turns into a framework.
+До расширения области на запуск, public API, хранение данных или жизненный цикл исполнителя нужно отдельное одобрение.
+Если предложение затрагивает эти поверхности без такого основания, его нужно проверить жёстко и сократить.
+Каждый PR должен доказывать один ясный инвариант и останавливаться до превращения в framework.
 
-## Performance is a product constraint
+## Быстродействие — часть продукта
 
-Delegation must stay fast enough that one parent session can keep several children moving without the operator waiting on the tool.
-Status, progress, watchers, TUI refresh, filesystem scans, and orchestration setup are hot paths.
-Token cost is part of the same constraint: extra context, extra children, and extra layers have to earn their keep.
-A change that makes those paths slower needs proof or explicit owner approval.
-Unmeasured risk in a hot path is a reason to refuse the change.
+Делегация должна быть достаточно быстрой, чтобы оператор не ждал общий механизм ради нескольких дочерних задач.
+Проверка состояния, progress, watchers, обновление TUI, обход файлов и подготовка сценария делегации находятся на горячем пути.
+Стоимость токенов относится к той же цене: дополнительный контекст, дочерние агенты и новые слои должны приносить измеримую пользу.
+Изменение горячего пути требует доказательства или отдельного одобрения владельца.
+Непроверенный риск в горячем пути — основание отклонить изменение.
 
-## Background work stays visible
+## Фоновая работа должна быть видна
 
-Work that runs out of sight must never disappear.
-Status views, FleetView, and run artifacts exist so the operator can always see and inspect running work, and steer or stop it when the runner supports those controls.
-They are safety infrastructure for delegation, not the product itself.
+Работа, которая идёт без оператора, не должна исчезать.
+Status views, FleetView и run artifacts нужны, чтобы оператор мог увидеть и проверить работу, а при наличии средств управления — направить или остановить её.
+Это инфраструктура безопасности делегации, а не отдельная цель продукта.
 
-## External agents earn trust
+## Внешним агентам нужно заслужить доверие
 
-Agents that are not Pi children are welcome inside workflows.
-Over time this points toward a vendor-neutral adapter layer for external CLIs and other harnesses.
-Today, external agents must be honest: they declare their real capabilities, receive a deliberate handoff instead of pretended native context, and fail closed when behavior is not proven.
-A passing demo is not a capability contract.
+Внешние агенты допустимы внутри сценариев работы.
+В перспективе это может привести к нейтральному к поставщику слою адаптеров для внешних CLI и других harnesses.
+Сейчас внешний агент должен честно объявлять capabilities, получать явный handoff и завершаться с отказом, если поведение не доказано.
+Удачный пример не доказывает capabilities агента.
 
-## What this project refuses
+## Чего проект не делает
 
-It does not become a general project manager or issue tracker.
-It does not own CI, merge policy, or release policy; it reports evidence into those systems.
-It does not add integrations for niche tools without clear demand.
-It does not add a second path to an outcome the operator can already reach with one ordinary action.
-It does not treat external agents as native Pi children before their capabilities are proven.
-It does not run background reviewers on every edit by default; delegation happens because the operator asked for it, directly or through their instructions.
-It does not accept a slower status loop, watcher, or common workflow just to make the machinery look richer.
+- Не превращается в общий менеджер проектов или issue tracker.
+- Не владеет CI, merge policy и release policy; он передаёт в эти системы `evidence`.
+- Не добавляет integrations для узких инструментов без подтверждённой потребности.
+- Не создаёт второй путь к результату, который оператор уже получает одним обычным действием.
+- Не считает внешний агент native Pi child без доказанных capabilities.
+- Не запускает background reviewers после каждого изменения по умолчанию; делегация начинается только по просьбе оператора или применимым правилам.
+- Не замедляет общий цикл проверки состояния, watcher или workflow ради более богатой механики без доказанной пользы.
 
-## How to judge a change
+## Как оценивать изменение
 
-A change fits when it gives one operator more leverage with the same or better control, visibility, and evidence.
-A change fits when it composes from existing primitives or honestly shows why it cannot.
-A change fits when no existing path already gives the operator the same outcome, or it shows why that path fails.
-A change fits when it keeps or improves speed and token cost, or proves why a cost is worth paying.
-A change does not fit when it adds hot-path cost without proof, hides running work, accepts confidence in place of evidence, widens authority beyond the operator's instructions, or grows scope toward general project management.
-When a proposal is in doubt, ask whether it makes delegation more trustworthy for the person whose name it runs under.
+Изменение проходит, если один оператор получает больше рычагов при том же или лучшем контроле, наблюдаемости и `evidence`.
+Оно также проходит, если собирается из существующих примитивов или честно объясняет, почему это невозможно.
+Существующий путь должен либо не давать нужного результата, либо иметь доказанную причину для замены.
+Быстродействие и стоимость токенов должны сохраниться, либо должна быть доказана польза дополнительной цены.
+
+Изменение не подходит, если оно без доказательств нагружает горячий путь, скрывает работу, заменяет `evidence` уверенностью, расширяет полномочия сверх указаний оператора или ведёт проект к общему менеджеру проектов.
+Если решение неясно, спроси: делает ли оно делегацию надёжнее для человека, от имени которого она работает?

@@ -63,10 +63,10 @@ export const SUBAGENT_SAFETY_GUIDANCE = safetyGuidance(allEnabled);
 
 export const DEFAULT_SUBAGENT_TOOL_DESCRIPTION = defaultDescription(allEnabled);
 
-export const SUBAGENT_TOOL_PROMPT_SNIPPET = "For operator-requested delegation, use subagents; compose multi-child work in one workflow call.";
-const STRUCTURED_SUBAGENT_TOOL_PROMPT_SNIPPET = "For operator-requested delegation, use subagents; compose multi-child work in one chain or tasks call.";
+export const SUBAGENT_TOOL_PROMPT_SNIPPET = "Используй `subagent` только по прямому запросу оператора; несколько дочерних задач объединяй в один workflow.";
+const STRUCTURED_SUBAGENT_TOOL_PROMPT_SNIPPET = "Используй `subagent` только по прямому запросу оператора; параллельные задачи объединяй в один chain или tasks.";
 export const SUBAGENT_TOOL_PROMPT_GUIDELINES = [
-	"Do not invoke subagents unless the operator requested delegation directly or through applicable instructions; for repository work, follow the local AGENTS.md/VISION.md contract and treat upstream material as reference, not authority.",
+	"Не вызывай `subagent`, если оператор прямо не попросил о делегации или это не следует из действующих правил; в работе с репозиторием следуй локальным правилам из `AGENTS.md` и `VISION.md`, а материалы upstream считай справочными.",
 ];
 
 export const COMPACT_SUBAGENT_TOOL_DESCRIPTION = DEFAULT_SUBAGENT_TOOL_DESCRIPTION;

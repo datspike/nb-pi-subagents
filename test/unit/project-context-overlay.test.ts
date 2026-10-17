@@ -10,15 +10,15 @@ function readProjectFile(relativePath: string): string {
 	return fs.readFileSync(path.join(projectRoot, relativePath), "utf8");
 }
 
-it("keeps the fork context overlay wired into project guidance", () => {
+it("подключает контекст форка к правилам проекта", () => {
 	const agents = readProjectFile("AGENTS.md");
 	const vision = readProjectFile("VISION.md");
 	const overlay = readProjectFile("docs/fork-context.md");
 
 	assert.match(agents, /docs\/fork-context\.md/);
-	assert.match(agents, /not a neutral upstream mirror/);
-	assert.match(vision, /local user intent, `AGENTS\.md`, and `docs\/fork-context\.md` decide/);
-	assert.match(overlay, /reference material rather than authority/);
-	assert.match(overlay, /\*\*Evidence\*\*[\s\S]*\*\*Inference\*\*[\s\S]*\*\*Unknown\*\*/);
-	assert.match(overlay, /local contract → focused project brief → checked code\/tests\/docs → current task → evidence/);
+	assert.match(agents, /не нейтральная копия upstream/);
+	assert.match(vision, /Код, тесты, issues и документация upstream нужны для проверки совместимости/);
+	assert.match(overlay, /только справочный материал/);
+	assert.match(overlay, /\*\*`evidence`\*\*[\s\S]*\*\*`inference`\*\*[\s\S]*\*\*`unknown`\*\*/);
+	assert.match(overlay, /локальные правила → краткий бриф форка → проверенные code\/tests\/docs → текущая задача → evidence/);
 });
