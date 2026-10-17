@@ -264,7 +264,7 @@ The `subagent:process-terminal` event and RPC `ping.capabilities.processTerminal
 
 ### Child session events
 
-Both launch paths subscribe to the child session's event stream directly; there is no stdout protocol. The `events.jsonl` artifact mirrors those events with `message_update` dropped, and the transcript records them with `message_update` projected the same way pi's JSON mode prints it. `agent_end.willRetry` defers completion until the child settles, and `agent_settled` is the terminal watermark; a child whose run does not settle shortly after its terminal event is aborted and finished without it.
+Both launch paths subscribe to the child session's event stream directly; there is no stdout protocol. The `events.jsonl` artifact mirrors those events with `message_update` dropped, and the transcript records them with `message_update` projected the same way pi's JSON mode prints it. A terminal assistant `message_end` is provisional because `turn_end` handlers may still run; `agent_end.willRetry` cancels the final-drain window when work will resume, while a non-retrying `agent_end` starts it. Threshold compaction pauses that window and re-arms it after a non-retrying `compaction_end`. `agent_settled` remains the terminal watermark; a child whose run does not settle shortly after the last completed lifecycle boundary is aborted and finished without it.
 
 ### Completion notification diagnostics
 

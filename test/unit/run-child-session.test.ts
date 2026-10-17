@@ -113,6 +113,70 @@ for (const mode of ["foreground", "background"] as const) {
 	});
 }
 
+for (const mode of ["foreground", "background"] as const) {
+	it(`${mode}: does not abort while turn_end work drains after an assistant stop`, { timeout: 10_000 }, async () => {
+		let listener: Parameters<ChildSession["subscribe"]>[0] = () => {};
+		let abortCalls = 0;
+		const messages: ChildSession["messages"] = [];
+		const session: ChildSession = {
+			subscribe(handler) { listener = handler; return () => {}; },
+			async prompt() {
+				const message = fauxAssistantMessage("final answer");
+				messages.push(message);
+				listener({ type: "message_end", message });
+				// A compaction repair can keep the turn hook open beyond the one-second
+				// final-stop grace window; terminal lifecycle events follow it.
+				await new Promise((resolve) => setTimeout(resolve, 1_250));
+				listener({ type: "turn_end", message, toolResults: [] });
+				listener({ type: "agent_end", messages, willRetry: false });
+				listener({ type: "agent_settled" });
+			},
+			async steer() {}, async followUp() {}, async abort() { abortCalls++; }, async dispose() {},
+			messages, sessionId: `${mode}-turn-end-drain-session`, modelId: "mock/model",
+		};
+		const factory: ChildSessionFactory = { create: async () => session, async dispose() {} };
+		const result = mode === "foreground"
+			? await runSync(process.cwd(), makeAgentConfigs(["worker"]), "worker", "Finish", { childSessionFactory: factory })
+			: await runChildSession({ factory, launch, prompt: "Finish", timeoutMessage: "timed out", appendChildEvent() {}, writeOutputLine() {} });
+		assert.equal(result.exitCode, 0);
+		assert.equal(result.error, undefined);
+		assert.equal(result.finalOutput, "final answer");
+		assert.equal(abortCalls, 0, "a delayed turn_end must not trigger final-stop abort");
+	});
+}
+
+
+for (const mode of ["foreground", "background"] as const) {
+	it(`${mode}: does not abort while post-agent compaction is running`, { timeout: 10_000 }, async () => {
+		let listener: Parameters<ChildSession["subscribe"]>[0] = () => {};
+		let abortCalls = 0;
+		const messages: ChildSession["messages"] = [];
+		const session: ChildSession = {
+			subscribe(handler) { listener = handler; return () => {}; },
+			async prompt() {
+				const message = fauxAssistantMessage("final answer");
+				messages.push(message);
+				listener({ type: "message_end", message });
+				listener({ type: "agent_end", messages, willRetry: false });
+				listener({ type: "compaction_start" });
+				await new Promise((resolve) => setTimeout(resolve, 1_250));
+				listener({ type: "compaction_end", willRetry: false });
+				listener({ type: "agent_settled" });
+			},
+			async steer() {}, async followUp() {}, async abort() { abortCalls++; }, async dispose() {},
+			messages, sessionId: `${mode}-post-agent-compaction-session`, modelId: "mock/model",
+		};
+		const factory: ChildSessionFactory = { create: async () => session, async dispose() {} };
+		const result = mode === "foreground"
+			? await runSync(process.cwd(), makeAgentConfigs(["worker"]), "worker", "Finish", { childSessionFactory: factory })
+			: await runChildSession({ factory, launch, prompt: "Finish", timeoutMessage: "timed out", appendChildEvent() {}, writeOutputLine() {} });
+		assert.equal(result.exitCode, 0);
+		assert.equal(result.error, undefined);
+		assert.equal(result.finalOutput, "final answer");
+		assert.equal(abortCalls, 0, "post-agent compaction must not trigger final-stop abort");
+	});
+}
+
 it("verifies a virtual-model child against its selection and keeps the dispatched model", { timeout: 10_000 }, async () => {
 	let listener: Parameters<ChildSession["subscribe"]>[0] | undefined;
 	const session: ChildSession = {

@@ -9,6 +9,7 @@
 - Interrupting an unknown explicit run id now fails instead of affecting an unrelated newest run; nested control falls through to the child inbox when the owner has no foreground route.
 - Reloading or switching the pi-subagents runtime now stops detached foreground children and records the stop so status and resume remain coherent.
 - Async result indexes are written before a result becomes readable, and per-run result leases prevent paused-result cleanup from deleting or overwriting a newer final result.
+- A child session no longer starts its final-drain timeout from an assistant `message_end`. The timeout now waits for non-retrying `agent_end` or `agent_settled`, so long `turn_end` handlers such as compaction repair are not aborted prematurely in foreground or background runs.
 ## [0.76.1] - 2026-10-05
 
 ### Highlights

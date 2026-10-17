@@ -640,13 +640,14 @@ async function runSingleAttempt(
 			return true;
 		};
 
-		// If the child emits a terminal assistant stop but its run never settles
+		// If the child reaches its terminal lifecycle event but its run never settles
 		// (a hook is stuck), abort it after a short grace period and then finish
 		// without it.
 		const FINAL_STOP_GRACE_MS = 1000;
 		const HARD_FINISH_MS = 3000;
 		let forcedTermination = false;
 		let cleanTerminalAssistantStopReceived = false;
+		let agentEndReceived = false;
 		let agentSettledReceived = false;
 		let queuedDrainHold = false;
 		let compactionStartedReceived = false;
@@ -711,7 +712,7 @@ async function runSingleAttempt(
 			finalDrainTimer.unref?.();
 		};
 		function armWatchdogTail(): void {
-			if ((!cleanTerminalAssistantStopReceived && !agentSettledReceived) || watchdogTailTimer || lifecycleFinished || sessionSettled) return;
+			if ((!agentEndReceived && !agentSettledReceived) || watchdogTailTimer || lifecycleFinished || sessionSettled) return;
 			watchdogTailTimer = setTimeout(() => {
 				watchdogTailTimer = undefined;
 				updateChildWatchdogState({
@@ -729,6 +730,7 @@ async function runSingleAttempt(
 		const applyChildLifecycle = (action: ChildLifecycleAction): void => {
 			if (action === "cancel-drain") {
 				cleanTerminalAssistantStopReceived = false;
+				agentEndReceived = false;
 				agentSettledReceived = false;
 				clearFinalDrainTimers();
 				clearWatchdogTailTimer();
@@ -1009,7 +1011,8 @@ async function runSingleAttempt(
 					return;
 				}
 			}
-			const lifecycleAction = projectChildLifecycle(evt, false, childLifecycleState);
+			const lifecycleAction = projectChildLifecycle(evt, childLifecycleState);
+			if (evt.type === "agent_end" && lifecycleAction === "start-drain") agentEndReceived = true;
 			if (evt.type === "agent_settled" && lifecycleAction === "start-drain") {
 				agentSettledReceived = true;
 				afterCompactionSettlement = compactionStartedReceived;
@@ -1032,7 +1035,7 @@ async function runSingleAttempt(
 					armWatchdogTail();
 				} else {
 					clearWatchdogTailTimer();
-					if (cleanTerminalAssistantStopReceived || agentSettledReceived) startFinalDrain();
+					if (agentEndReceived || agentSettledReceived) startFinalDrain();
 				}
 				fireUpdate();
 				return;
@@ -1125,7 +1128,7 @@ async function runSingleAttempt(
 					}
 					const assistantText = extractTextFromContent(evt.message.content);
 					appendRecentOutput(progress, assistantText.split("\n").slice(-10));
-					// Final assistant message: start the settle drain window.
+					// Record a terminal assistant stop; turn_end hooks may still continue.
 					if (terminalAssistantStop) {
 						if (!evt.message.errorMessage && assistantText.trim()) assistantError = undefined;
 						cleanTerminalAssistantStopReceived ||= !evt.message.errorMessage;
@@ -1133,7 +1136,8 @@ async function runSingleAttempt(
 						activeToolCalls.clear();
 						activeToolKeysByName.clear();
 						refreshCurrentTool();
-						applyChildLifecycle(projectChildLifecycle(evt, true, childLifecycleState));
+						// The assistant stop is provisional: turn_end hooks may still be running.
+						// Start the bounded drain only from agent_end/agent_settled above.
 					}
 				}
 				updateActivityState(now);
@@ -1327,7 +1331,7 @@ async function runSingleAttempt(
 				&& !launch.session.ambientExtensions) {
 				closeError = `${promptErrorMessage}\n\n${formatChildModelResolutionDiagnostic({ agent: agent.name, model: launch.session.model, host: "parent", capabilityCeiling: launch.toolPlan.capabilityCeiling })}`;
 			}
-			const forcedDrainAfterFinalSuccess = (forced || forcedTermination) && (cleanTerminalAssistantStopReceived || agentSettledReceived) && !closeError;
+			const forcedDrainAfterFinalSuccess = (forced || forcedTermination) && (cleanTerminalAssistantStopReceived || agentEndReceived || agentSettledReceived) && !closeError;
 			const forcedDrainAfterEmptyTerminal = forcedDrainAfterFinalSuccess && hasEmptyTerminalAssistantResponse(result.messages ?? []);
 			if (!closeError && (abortedBySignal || session?.shutDown || hostStopReason) && !result.interrupted && !result.timedOut) {
 				closeError = hostStopReason ?? (session?.shutDown ? "Subagent stopped because the parent session shut down." : STOPPED_BEFORE_COMPLETION_ERROR);
@@ -1416,11 +1420,11 @@ async function runSingleAttempt(
 				const steer = created.steer.bind(created);
 				const followUp = created.followUp.bind(created);
 				created.steer = async (text) => {
-					if (cleanTerminalAssistantStopReceived || agentSettledReceived) queuedDrainHold = true;
+					if (cleanTerminalAssistantStopReceived || agentEndReceived || agentSettledReceived) queuedDrainHold = true;
 					return steer(text);
 				};
 				created.followUp = async (text) => {
-					if (cleanTerminalAssistantStopReceived || agentSettledReceived) queuedDrainHold = true;
+					if (cleanTerminalAssistantStopReceived || agentEndReceived || agentSettledReceived) queuedDrainHold = true;
 					return followUp(text);
 				};
 				created.detached = detached;

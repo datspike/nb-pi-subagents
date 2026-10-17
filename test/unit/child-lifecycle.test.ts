@@ -4,33 +4,42 @@ import { projectChildLifecycle, type ChildLifecycleState } from "../../src/runs/
 
 describe("child lifecycle final drain", () => {
 	for (const type of ["turn_start", "agent_start", "auto_retry_start"]) {
-		it(`cancels the previous final drain when resumed work emits ${type}`, () => {
+		it(`cancels a pending final drain when resumed work emits ${type}`, () => {
 			const state: ChildLifecycleState = { compactionRetryActive: false };
-			assert.equal(projectChildLifecycle({ type: "message_end" }, true, state), "start-drain");
-			assert.equal(projectChildLifecycle({ type }, false, state), "cancel-drain");
-			assert.equal(projectChildLifecycle({ type: "agent_settled" }, false, state), "start-drain");
+			assert.equal(projectChildLifecycle({ type: "message_end" }, state), "none");
+			assert.equal(projectChildLifecycle({ type }, state), "cancel-drain");
+			assert.equal(projectChildLifecycle({ type: "agent_settled" }, state), "start-drain");
 		});
 	}
 
+	it("holds the final drain across threshold compaction", () => {
+		const state: ChildLifecycleState = { compactionRetryActive: false };
+		assert.equal(projectChildLifecycle({ type: "agent_end", willRetry: false }, state), "start-drain");
+		assert.equal(projectChildLifecycle({ type: "compaction_start" }, state), "cancel-drain");
+		assert.equal(projectChildLifecycle({ type: "compaction_end", willRetry: false }, state), "start-drain");
+		assert.equal(projectChildLifecycle({ type: "agent_settled" }, state), "start-drain");
+	});
+
 	it("does not drain compaction settlement before its retry starts", () => {
 		const state: ChildLifecycleState = { compactionRetryActive: false };
-		assert.equal(projectChildLifecycle({ type: "compaction_end", willRetry: true }, false, state), "cancel-drain");
-		assert.equal(projectChildLifecycle({ type: "agent_settled" }, false, state), "none");
-		assert.equal(projectChildLifecycle({ type: "auto_retry_start" }, false, state), "cancel-drain");
+		assert.equal(projectChildLifecycle({ type: "compaction_end", willRetry: true }, state), "cancel-drain");
+		assert.equal(projectChildLifecycle({ type: "agent_settled" }, state), "none");
+		assert.equal(projectChildLifecycle({ type: "auto_retry_start" }, state), "cancel-drain");
 		assert.equal(state.compactionRetryActive, false);
-		assert.equal(projectChildLifecycle({ type: "agent_settled" }, false, state), "start-drain");
+		assert.equal(projectChildLifecycle({ type: "agent_settled" }, state), "start-drain");
 	});
 
-	it("still drains a final message or settled session without resumed work", () => {
-		assert.equal(projectChildLifecycle({ type: "message_end" }, true), "start-drain");
-		assert.equal(projectChildLifecycle({ type: "agent_settled" }), "start-drain");
-		assert.equal(projectChildLifecycle({ type: "message_update" }), "none");
-	});
-
-	it("cancels the final drain on a plain agent_end", () => {
+	it("starts the final drain only at an agent lifecycle boundary", () => {
 		const state: ChildLifecycleState = { compactionRetryActive: false };
-		assert.equal(projectChildLifecycle({ type: "message_end" }, true, state), "start-drain");
-		assert.equal(projectChildLifecycle({ type: "agent_end" }, false, state), "cancel-drain");
-		assert.equal(projectChildLifecycle({ type: "agent_settled" }, false, state), "start-drain");
+		assert.equal(projectChildLifecycle({ type: "message_end" }, state), "none");
+		assert.equal(projectChildLifecycle({ type: "agent_end", willRetry: false }, state), "start-drain");
+		assert.equal(projectChildLifecycle({ type: "agent_settled" }, state), "start-drain");
+		assert.equal(projectChildLifecycle({ type: "message_update" }, state), "none");
+	});
+
+	it("cancels the final drain when agent_end reports a retry", () => {
+		const state: ChildLifecycleState = { compactionRetryActive: false };
+		assert.equal(projectChildLifecycle({ type: "agent_end", willRetry: true }, state), "cancel-drain");
+		assert.equal(projectChildLifecycle({ type: "agent_settled" }, state), "start-drain");
 	});
 });

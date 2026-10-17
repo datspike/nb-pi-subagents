@@ -195,6 +195,7 @@ export function runChildSession(input: RunChildSessionInput): Promise<RunChildSe
 		let promptSettled = false;
 		let forcedTermination = false;
 		let cleanTerminalAssistantStopReceived = false;
+		let agentEndReceived = false;
 		let agentSettledReceived = false;
 		let queuedDrainHold = false;
 		let compactionStartedReceived = false;
@@ -301,7 +302,7 @@ export function runChildSession(input: RunChildSessionInput): Promise<RunChildSe
 			}
 		};
 		function armWatchdogTail(): void {
-			if ((!cleanTerminalAssistantStopReceived && !agentSettledReceived) || watchdogTailTimer || settled || promptSettled) return;
+			if ((!agentEndReceived && !agentSettledReceived) || watchdogTailTimer || settled || promptSettled) return;
 			watchdogTailTimer = setTimeout(() => {
 				watchdogTailTimer = undefined;
 				childWatchdogState = {
@@ -315,7 +316,7 @@ export function runChildSession(input: RunChildSessionInput): Promise<RunChildSe
 			}, input.childWatchdog?.watchdogTailTimeoutMs ?? 120_000);
 			watchdogTailTimer.unref?.();
 		}
-		// If the child emits its terminal event but its run never settles (a hook
+		// If the child reaches its terminal lifecycle event but its run never settles (a hook
 		// is stuck), abort it after a short grace period and then finish without it.
 		const observeQueuedDrainHold = (): boolean => {
 			if (childSessionHasQueuedMessages(session)) queuedDrainHold = true;
@@ -355,6 +356,7 @@ export function runChildSession(input: RunChildSessionInput): Promise<RunChildSe
 		const applyChildLifecycle = (action: ChildLifecycleAction): void => {
 			if (action === "cancel-drain") {
 				cleanTerminalAssistantStopReceived = false;
+				agentEndReceived = false;
 				agentSettledReceived = false;
 				clearFinalDrainTimers();
 				clearWatchdogTailTimer();
@@ -434,7 +436,8 @@ export function runChildSession(input: RunChildSessionInput): Promise<RunChildSe
 				compactionStartedReceived = false;
 				afterCompactionSettlement = false;
 			}
-			const lifecycleAction = projectChildLifecycle(event, false, childLifecycleState);
+			const lifecycleAction = projectChildLifecycle(event, childLifecycleState);
+			if (event.type === "agent_end" && lifecycleAction === "start-drain") agentEndReceived = true;
 			if (event.type === "agent_settled" && lifecycleAction === "start-drain") {
 				agentSettledReceived = true;
 				afterCompactionSettlement = compactionStartedReceived;
@@ -460,7 +463,7 @@ export function runChildSession(input: RunChildSessionInput): Promise<RunChildSe
 					armWatchdogTail();
 				} else {
 					clearWatchdogTailTimer();
-					if (cleanTerminalAssistantStopReceived || agentSettledReceived) startFinalDrain();
+					if (agentEndReceived || agentSettledReceived) startFinalDrain();
 				}
 				return;
 			}
@@ -544,7 +547,8 @@ export function runChildSession(input: RunChildSessionInput): Promise<RunChildSe
 					activeToolCalls.clear();
 					activeToolKeysByName.clear();
 					refreshCurrentTool();
-					applyChildLifecycle(projectChildLifecycle(event, true, childLifecycleState));
+					// The assistant stop is provisional: turn_end hooks may still continue.
+					// The bounded drain starts only from agent_end/agent_settled above.
 				}
 			}
 		};
@@ -612,7 +616,7 @@ export function runChildSession(input: RunChildSessionInput): Promise<RunChildSe
 				&& !input.launch.session.ambientExtensions) {
 				finalError = `${promptErrorMessage}\n\n${formatChildModelResolutionDiagnostic({ agent: input.launch.config.agent, model: input.launch.session.model, host: "runner", capabilityCeiling: input.launch.toolPlan.capabilityCeiling })}`;
 			}
-			const forcedDrainAfterFinalSuccess = (forced || forcedTermination) && (cleanTerminalAssistantStopReceived || agentSettledReceived) && !finalError;
+			const forcedDrainAfterFinalSuccess = (forced || forcedTermination) && (cleanTerminalAssistantStopReceived || agentEndReceived || agentSettledReceived) && !finalError;
 			const forcedDrainAfterEmptyTerminal = forcedDrainAfterFinalSuccess && hasEmptyTerminalAssistantResponse(messages);
 			if (!finalError && forced && !forcedDrainAfterFinalSuccess && !interrupted && !timedOut && !stopped) {
 				finalError = "Subagent session did not settle after it was aborted.";
@@ -681,11 +685,11 @@ export function runChildSession(input: RunChildSessionInput): Promise<RunChildSe
 				const steer = created.steer.bind(created);
 				const followUp = created.followUp.bind(created);
 				created.steer = async (text) => {
-					if (cleanTerminalAssistantStopReceived || agentSettledReceived) queuedDrainHold = true;
+					if (cleanTerminalAssistantStopReceived || agentEndReceived || agentSettledReceived) queuedDrainHold = true;
 					return steer(text);
 				};
 				created.followUp = async (text) => {
-					if (cleanTerminalAssistantStopReceived || agentSettledReceived) queuedDrainHold = true;
+					if (cleanTerminalAssistantStopReceived || agentEndReceived || agentSettledReceived) queuedDrainHold = true;
 					return followUp(text);
 				};
 				unsubscribe = created.subscribe(processEvent);
