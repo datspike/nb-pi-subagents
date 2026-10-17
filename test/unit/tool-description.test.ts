@@ -85,7 +85,7 @@ describe("registered subagent tool description", () => {
 	it("uses concise split metadata only by default", () => {
 		assert.equal(buildSubagentToolDescription(), DEFAULT_SUBAGENT_TOOL_DESCRIPTION);
 		const metadata = buildSubagentToolPromptMetadata();
-		assert.equal(SUBAGENT_TOOL_PROMPT_SNIPPET, "Используй `subagent` только по прямому запросу оператора; несколько дочерних задач объединяй в один workflow.");
+		assert.equal(SUBAGENT_TOOL_PROMPT_SNIPPET, "Используй `subagent`, когда делегация разрешена текущим запросом или действующими правилами; параллельные задачи объединяй в один chain или tasks.");
 		assert.deepEqual(SUBAGENT_TOOL_PROMPT_GUIDELINES, [
 			"Не вызывай `subagent`, если оператор прямо не попросил о делегации или это не следует из действующих правил; в работе с репозиторием следуй локальным правилам из `AGENTS.md` и `VISION.md`, а материалы upstream считай справочными.",
 		]);

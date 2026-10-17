@@ -80,7 +80,7 @@ describe("workflow-scripts tool surface", () => {
 				assert.ok(description.includes(text), `${toolDescriptionMode ?? "default"} description lacks ${text}`);
 			}
 		}
-		assert.equal(buildSubagentToolPromptMetadata({}, surface).promptSnippet, "Используй `subagent` только по прямому запросу оператора; параллельные задачи объединяй в один chain или tasks.");
+		assert.equal(buildSubagentToolPromptMetadata({}, surface).promptSnippet, "Используй `subagent`, когда делегация разрешена текущим запросом или действующими правилами; параллельные задачи объединяй в один chain или tasks.");
 	});
 });
 
