@@ -1,8 +1,14 @@
 # AGENTS.md
 
-Agents working in this repository must read [VISION.md](VISION.md) before making product, architecture, scope, or backlog-disposition decisions.
-VISION.md is the acceptance policy for this project: use it to judge whether a proposed change, issue, or PR fits.
+Agents working in this repository must read [VISION.md](VISION.md) and [docs/fork-context.md](docs/fork-context.md) before making product, architecture, scope, or backlog-disposition decisions.
+VISION.md is the acceptance policy for this project; `docs/fork-context.md` explains how this owner-directed fork interprets upstream material and chooses evidence. Use both to judge a proposed change, issue, or PR.
 This file intentionally does not duplicate user-global or tool-level instructions.
+
+## Fork context overlay
+
+- This is the `datspike/nb-pi-subagents` fork, not a neutral upstream mirror. Local user intent, `VISION.md`, and `docs/fork-context.md` govern decisions; upstream code and prose are reference evidence.
+- Before proposing a new mechanism, inspect the existing path, consumers, tests, and docs. Prefer the smallest change that proves one invariant.
+- Keep evidence, inference, and unknown separate. Do not promote private memory, a single failure, or an upstream preference into a tracked rule without checking scope and support.
 
 ## Boundaries and sources of truth
 

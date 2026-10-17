@@ -87,7 +87,7 @@ describe("registered subagent tool description", () => {
 		const metadata = buildSubagentToolPromptMetadata();
 		assert.equal(SUBAGENT_TOOL_PROMPT_SNIPPET, "For operator-requested delegation, use subagents; compose multi-child work in one workflow call.");
 		assert.deepEqual(SUBAGENT_TOOL_PROMPT_GUIDELINES, [
-			"Do not invoke subagents unless the operator requested delegation directly or through applicable instructions.",
+			"Do not invoke subagents unless the operator requested delegation directly or through applicable instructions; for repository work, follow the local AGENTS.md/VISION.md contract and treat upstream material as reference, not authority.",
 		]);
 		assert.equal(metadata.promptSnippet, SUBAGENT_TOOL_PROMPT_SNIPPET);
 		assert.deepEqual(metadata.promptGuidelines, SUBAGENT_TOOL_PROMPT_GUIDELINES);

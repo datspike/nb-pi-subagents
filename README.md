@@ -135,6 +135,7 @@ The full reference lives in `docs/`:
 
 | Doc | What's in it |
 |-----|--------------|
+| [Fork context](https://github.com/datspike/nb-pi-subagents/blob/main/docs/fork-context.md) | Owner-directed rules for interpreting upstream material, selecting changes, and separating evidence from inference and unknown. |
 | [Agents](https://github.com/datspike/nb-pi-subagents/blob/main/docs/agents.md) | Custom agents, frontmatter reference, overriding builtins, tools, extensions, skills, per-agent memory. |
 | [Models](https://github.com/datspike/nb-pi-subagents/blob/main/docs/models.md) | Single-model selection and launch, defaults, per-role overrides, recommended tiering, thinking levels, model scope enforcement, profiles. |
 | [Workflows](https://github.com/datspike/nb-pi-subagents/blob/main/docs/workflows.md) | Orchestration patterns, prompt shortcuts, scripted workflows, worktree isolation, child-to-parent coordination, the recursion guard. |

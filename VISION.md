@@ -1,5 +1,11 @@
 # Vision
 
+## Fork ownership and context
+
+This repository is the `datspike/nb-pi-subagents` development line, maintained for one owner's working style and quality bar. It is not required to preserve upstream ideology or remain a one-to-one mirror. Upstream code, tests, issues, and documentation are technical reference material; local user intent, `AGENTS.md`, and `docs/fork-context.md` decide which changes fit and how they are accepted.
+
+When a source or proposal is uncertain, separate checked evidence, inference, and unknown. Do not copy private memory or an upstream process into the repository unless the durable rule, scope, and supporting evidence are clear.
+
 ## What pi-subagents is
 
 pi-subagents lets one Pi session delegate focused work to child agents with supervision, evidence, and control.
