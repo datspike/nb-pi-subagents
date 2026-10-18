@@ -109,7 +109,7 @@ describe("subagent tool activation", () => {
 		assert.ok(runtime.active().includes("subagent_supervisor"));
 		const loader = runtime.tools.get("subagents_enable");
 		assert.ok(loader);
-		assert.match(loader.description ?? "", /current request|applicable .*instructions/i);
+		assert.match(loader.promptSnippet ?? "", /current request|applicable .*instructions/i);
 		assert.deepEqual(validateToolArguments(loader as never, { type: "toolCall", id: "call-1", name: "subagents_enable", arguments: { action: "enable" } }), { action: "enable" });
 
 		const result = await loader.execute?.("enable", {}, new AbortController().signal, undefined, runtime.context);

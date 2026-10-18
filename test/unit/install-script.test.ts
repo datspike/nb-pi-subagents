@@ -16,20 +16,27 @@ function runExistingInstall(remoteUrl: string) {
 	const logPath = path.join(root, "git-log.jsonl");
 	fs.mkdirSync(bin, { recursive: true });
 	fs.mkdirSync(path.join(extensionDir, ".git"), { recursive: true });
-	const fakeGit = path.join(bin, "git");
-	fs.writeFileSync(fakeGit, `#!/usr/bin/env node
-import fs from "node:fs";
-const args = process.argv.slice(2);
+	const fakeGit = path.join(bin, process.platform === "win32" ? "git.exe" : "git");
+	const fakeGitBody = `import fs from "node:fs";
+const command = process.platform === "win32" ? process.argv[1] : null;
+const args = process.platform === "win32" ? [command ? command.split(/[\\\\/]/).pop() : "git", ...process.argv.slice(2)] : process.argv.slice(2);
 fs.appendFileSync(process.env.GIT_LOG, JSON.stringify(args) + "\\n");
 if (args.join(" ") === "remote get-url origin") console.log(process.env.FAKE_REMOTE);
-`);
-	fs.chmodSync(fakeGit, 0o755);
+`;
+	if (process.platform === "win32") {
+		fs.copyFileSync(process.execPath, fakeGit);
+		for (const command of ["remote", "pull"]) fs.writeFileSync(path.join(extensionDir, command), fakeGitBody);
+	} else {
+		fs.writeFileSync(fakeGit, `#!/usr/bin/env node\n${fakeGitBody}`);
+		fs.chmodSync(fakeGit, 0o755);
+	}
 	const env = {
 		...process.env,
 		HOME: root,
+		USERPROFILE: root,
 		FAKE_REMOTE: remoteUrl,
 		GIT_LOG: logPath,
-		PATH: `${bin}:${process.env.PATH ?? ""}`,
+		PATH: `${bin}${path.delimiter}${process.env.PATH ?? ""}`,
 	};
 	try {
 		execFileSync(process.execPath, [INSTALLER], { env, encoding: "utf-8" });
