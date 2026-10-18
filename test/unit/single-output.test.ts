@@ -403,17 +403,22 @@ describe("finalizeSingleOutput", () => {
 for (const name of ["report\nfinal.md", "отчёт\r\nфинал.md", "report\tfinal.md"]) it(`keeps a typed saved-output pointer with control characters: ${JSON.stringify(name)}`, () => {
 	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-output-control-path-"));
 	try {
-		const file = path.join(dir, name), output = "x".repeat(5000); fs.writeFileSync(file, output);
+		const file = path.join(dir, process.platform === "win32" ? "report-final.md" : name), output = "x".repeat(5000);
+		const escapedPath = process.platform === "win32" ? `${file}${name}` : file;
+		fs.writeFileSync(file, output);
 		const reference = formatSavedOutputReference(file, output);
+		const escapedReference = formatSavedOutputReference(escapedPath, output);
 		const finalized = finalizeSingleOutput({ fullOutput: output, exitCode: 0, savedPath: file });
 		for (const input of [output, finalized.displayOutput]) for (const suffix of ["", "\n" + "suffix ".repeat(5000)]) {
 			const text = capFinalInlineOutput(input, { savedPath: finalized.savedPath }, suffix);
 			assert.ok(Buffer.byteLength(text) <= 8192);
 			assert.doesNotMatch(text, /Full output unavailable/);
 			assert.ok(text.includes(reference.message));
-			assert.ok(reference.message.includes(JSON.stringify(file)));
 			assert.equal(reference.message.split("\n").length, 1);
 		}
 		assert.equal(fs.readFileSync(file, "utf8"), output);
+		assert.equal(escapedReference.message.split("\n").length, 1);
+		if (process.platform === "win32") assert.ok(escapedReference.message.includes(JSON.stringify(escapedPath)));
+		else assert.ok(reference.message.includes(JSON.stringify(file)));
 	} finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
