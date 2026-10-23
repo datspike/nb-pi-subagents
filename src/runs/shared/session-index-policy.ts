@@ -4,6 +4,7 @@ export const SESSION_INDEX_POLICY_CUSTOM_TYPE = "session-index-policy";
 export const SESSION_INDEX_POLICY_ENV = "PI_SESSION_INDEX_POLICY";
 export const SESSION_INDEX_REASON_ENV = "PI_SESSION_INDEX_REASON";
 export const SESSION_INDEX_SOURCE_ENV = "PI_SESSION_INDEX_SOURCE";
+export const SESSION_INDEX_POLICY_ENV_KEYS = [SESSION_INDEX_POLICY_ENV, SESSION_INDEX_REASON_ENV, SESSION_INDEX_SOURCE_ENV] as const;
 
 export type SessionIndexPolicyReason = "review" | "eval" | "memory-maintenance";
 
@@ -70,4 +71,15 @@ export function sessionIndexPolicyEnv(policy: SessionIndexPolicyRequest | undefi
 		[SESSION_INDEX_REASON_ENV]: policy.reason,
 		[SESSION_INDEX_SOURCE_ENV]: policy.source ?? "pi-subagents",
 	};
+}
+
+export function sessionIndexPolicyProcessEnv(policy: SessionIndexPolicyRequest | undefined): Record<string, string | undefined> {
+	const values = sessionIndexPolicyEnv(policy);
+	return Object.fromEntries(SESSION_INDEX_POLICY_ENV_KEYS.map((key) => [key, values?.[key]]));
+}
+
+export function omitSessionIndexPolicyEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+	const sanitized = { ...env };
+	for (const key of SESSION_INDEX_POLICY_ENV_KEYS) delete sanitized[key];
+	return sanitized;
 }

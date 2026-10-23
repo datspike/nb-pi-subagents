@@ -7,6 +7,7 @@ import {
 	type ChildSessionLaunch,
 	type PiCodingAgentModule,
 } from "../../src/runs/shared/child-session.ts";
+import { sessionIndexPolicyProcessEnv } from "../../src/runs/shared/session-index-policy.ts";
 
 describe("childSessionHasQueuedMessages", () => {
 	it("treats a missing session or method as no queued input", () => {
@@ -256,5 +257,42 @@ describe("default factory virtual model selection", () => {
 		session.model = { provider: "router", id: "auto", api: "pi-virtual" };
 		assert.equal(child.virtualModelId, "router/auto");
 		assert.equal(child.modelId, "router/auto");
+	});
+});
+
+describe("default factory policy environment", () => {
+	it("does not inherit a parent's policy environment into an unmarked child", async () => {
+		const keys = ["PI_SESSION_INDEX_POLICY", "PI_SESSION_INDEX_REASON", "PI_SESSION_INDEX_SOURCE"] as const;
+		const previous = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
+		const seen: Record<string, string | undefined>[] = [];
+		for (const key of keys) process.env[key] = `parent-${key}`;
+		try {
+			const factory = createDefaultChildSessionFactory({
+				loadPiCodingAgent: async () => ({
+					ModelRuntime: { create: async () => ({}) },
+					SettingsManager: { create: () => ({}) },
+					DefaultResourceLoader: class { async reload() {} getExtensions() { return { extensions: [], errors: [], runtime: { pendingProviderRegistrations: [], pendingNativeProviderRegistrations: [] } }; } },
+					SessionManager: { inMemory: () => ({}) },
+					resolveCliModel: () => ({}),
+					createAgentSession: async () => {
+						seen.push(Object.fromEntries(keys.map((key) => [key, process.env[key]])));
+						return { session: { bindExtensions: async () => {}, dispose() {}, extensionRunner: { hasHandlers: () => false }, subscribe: () => () => {}, messages: [], sessionId: "unmarked-child" } };
+					},
+				} as unknown as PiCodingAgentModule),
+			});
+			const baseLaunch = { cwd: process.cwd(), storage: { kind: "memory" } as const, extensionPaths: [], ambientExtensions: false, hooks: [], noSkills: true, noContextFiles: true, runtime: { fanoutChild: false, depth: 1, waitTool: { enabled: false }, fast: false } as ChildSessionLaunch["runtime"] };
+			await factory.create(baseLaunch);
+			await factory.create({ ...baseLaunch, processEnv: sessionIndexPolicyProcessEnv({ reason: "eval", source: "eval-session-marker" }) });
+			assert.deepEqual(seen, [
+				{ PI_SESSION_INDEX_POLICY: undefined, PI_SESSION_INDEX_REASON: undefined, PI_SESSION_INDEX_SOURCE: undefined },
+				{ PI_SESSION_INDEX_POLICY: "exclude", PI_SESSION_INDEX_REASON: "eval", PI_SESSION_INDEX_SOURCE: "eval-session-marker" },
+			]);
+		} finally {
+			for (const key of keys) {
+				if (previous[key] === undefined) delete process.env[key];
+				else process.env[key] = previous[key];
+			}
+		}
+		assert.deepEqual(Object.fromEntries(keys.map((key) => [key, process.env[key]])), previous);
 	});
 });

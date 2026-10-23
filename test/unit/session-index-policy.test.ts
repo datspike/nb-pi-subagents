@@ -5,7 +5,7 @@ import path from "node:path";
 import test from "node:test";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { buildInProcessChildLaunch } from "../../src/runs/shared/child-launch.ts";
-import { ensureSessionIndexPolicy, resolveSessionIndexPolicy, sessionIndexPolicyEnv } from "../../src/runs/shared/session-index-policy.ts";
+import { ensureSessionIndexPolicy, omitSessionIndexPolicyEnv, resolveSessionIndexPolicy, sessionIndexPolicyEnv, sessionIndexPolicyProcessEnv } from "../../src/runs/shared/session-index-policy.ts";
 
 const policy = resolveSessionIndexPolicy("reviewer");
 
@@ -23,6 +23,7 @@ test("launch boundary gives explicit eval precedence over generic reviewer", () 
 	const evalLaunch = buildInProcessChildLaunch({ ...base, childAgentName: "reviewer", subagentOnlyExtensions: ["/eval-session-marker/extension/marker.ts"], sessionIndexPolicy: { reason: "eval", source: "eval-session-marker" } });
 	assert.deepEqual(evalLaunch.session.extensionPaths, ["/eval-session-marker/extension/marker.ts"]);
 	assert.equal(buildInProcessChildLaunch({ ...base, childAgentName: "worker" }).session.sessionIndexPolicy, undefined);
+	assert.deepEqual(buildInProcessChildLaunch({ ...base, childAgentName: "reviewer" }).session.processEnv, sessionIndexPolicyProcessEnv(policy));
 });
 
 test("writes the marker through the real SDK SessionManager before lifecycle", () => {
@@ -67,4 +68,10 @@ test("rejects a conflicting resume marker and exports subprocess env only", () =
 		PI_SESSION_INDEX_SOURCE: "pi-subagents",
 	});
 	assert.equal(sessionIndexPolicyEnv(undefined), undefined);
+	assert.deepEqual(sessionIndexPolicyProcessEnv(undefined), {
+		PI_SESSION_INDEX_POLICY: undefined,
+		PI_SESSION_INDEX_REASON: undefined,
+		PI_SESSION_INDEX_SOURCE: undefined,
+	});
+	assert.deepEqual(omitSessionIndexPolicyEnv({ KEEP_ME: "yes", PI_SESSION_INDEX_POLICY: "exclude", PI_SESSION_INDEX_REASON: "review", PI_SESSION_INDEX_SOURCE: "pi-subagents" }), { KEEP_ME: "yes" });
 });

@@ -91,7 +91,7 @@ import { normalizeExtensionBindings, omitExtensionBindingsEnv, type ExtensionBin
 import { omitGitRoutingEnv } from "../shared/git-environment.ts";
 import { assertWorkflowLaneKey, normalizeWorkflowLaneMetadata } from "../shared/lane-metadata.ts";
 import { assertRequiredChildExtensionsAdmitted, resolveRequiredChildExtensions, writeRetainedRequiredChildExtensions, type RequiredChildExtensionSnapshot } from "../../shared/required-child-extensions.ts";
-import { resolveSessionIndexPolicy, sessionIndexPolicyEnv } from "../shared/session-index-policy.ts";
+import { omitSessionIndexPolicyEnv, resolveSessionIndexPolicy, sessionIndexPolicyEnv } from "../shared/session-index-policy.ts";
 
 function uniformSessionIndexPolicy(steps: RunnerStep[]): ReturnType<typeof resolveSessionIndexPolicy> {
 	const policies = steps.flatMap((step): ReturnType<typeof resolveSessionIndexPolicy>[] => {
@@ -741,7 +741,7 @@ function spawnRunner(cfg: object, suffix: string, cwd: string, initialStatus: Om
 				? [...preload, "--experimental-strip-types", runner, cfgPath]
 				: [...preload, jitiCliPath!, runner, cfgPath];
 		const runnerEnv: NodeJS.ProcessEnv = {
-			...omitGitRoutingEnv(omitExtensionBindingsEnv(process.env)),
+			...omitSessionIndexPolicyEnv(omitGitRoutingEnv(omitExtensionBindingsEnv(process.env))),
 			...childCacheRetentionEnv(),
 			[PI_CODING_AGENT_PACKAGE_ROOT_ENV]: binaryHost ? undefined : piPackageRoot,
 			// npm must override inherited bundled layouts (#2071); binaries retain release assets.

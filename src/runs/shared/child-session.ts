@@ -21,7 +21,7 @@ import { PI_CODING_AGENT_PACKAGE, resolveInstalledPiPackageRoot, resolvePiPackag
 import type { ChildRuntimeConfig } from "./child-runtime-config.ts";
 import type { RequiredChildExtensionSnapshot } from "../../shared/required-child-extensions.ts";
 import type { HerdrMachineReference, HerdrRemoteGitStatus } from "../../shared/types.ts";
-import { ensureSessionIndexPolicy, type SessionIndexPolicyRequest } from "./session-index-policy.ts";
+import { ensureSessionIndexPolicy, SESSION_INDEX_POLICY_ENV_KEYS, sessionIndexPolicyProcessEnv, type SessionIndexPolicyRequest } from "./session-index-policy.ts";
 
 export interface ChildSessionEvent {
 	type: string;
@@ -490,7 +490,10 @@ export function createDefaultChildSessionFactory(options: DefaultChildSessionFac
 			};
 			const open = async () => {
 				const requiredPaths = new Set((launch.requiredExtensions ?? []).map(({ path }) => path));
+				const previousPolicyEnv = Object.fromEntries(SESSION_INDEX_POLICY_ENV_KEYS.map((key) => [key, process.env[key]]));
+				applyProcessEnv(sessionIndexPolicyProcessEnv(undefined));
 				applyProcessEnv(launch.processEnv);
+				try {
 				if (!resetExtensionCacheOnReload(loader) && (launch.ambientExtensions || launch.extensionPaths.length)) launch.onExtensionError?.({ extensionPath: "<loader>", event: "load", error: new Error("pi's extension cache reset is unavailable; extensions loaded into this child share module state with other sessions in this process.") });
 				await loader.reload();
 				const loadErrors = requiredPaths.size > 0
@@ -557,6 +560,9 @@ export function createDefaultChildSessionFactory(options: DefaultChildSessionFac
 					throw new Error(`Required child extension failed during startup: ${requiredStartupErrors.join("; ")}`);
 				}
 				return session;
+				} finally {
+					applyProcessEnv(previousPolicyEnv);
+				}
 			};
 			const opened = loading.catch(() => {}).then(open);
 			loading = opened;

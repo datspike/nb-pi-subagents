@@ -15,6 +15,7 @@ interface BranchSessionEntry {
 	id?: string;
 	cwd?: string;
 	parentId?: string | null;
+	customType?: string;
 	timestamp?: string;
 	targetId?: string;
 	replacement?: { content?: unknown } | null;
@@ -139,6 +140,13 @@ function readSessionEntries(sessionFile: string): BranchSessionEntry[] {
 	});
 }
 
+function removeInheritedSessionIndexPolicies(entries: BranchSessionEntry[]): boolean {
+	const retained = entries.filter((entry) => !(entry.type === "custom" && entry.customType === "session-index-policy"));
+	if (retained.length === entries.length) return false;
+	entries.splice(0, entries.length, ...retained);
+	return true;
+}
+
 export function createForkContextResolver(
 	sessionManager: ForkableSessionManager,
 	requestedContext: unknown,
@@ -204,11 +212,14 @@ export function createForkContextResolver(
 					throw new Error(`Session manager returned a forked session file that does not exist and cannot be persisted by fallback: ${sessionFile}`);
 				}
 				sanitizeUnsafeThinkingBlocks(entries);
+				removeInheritedSessionIndexPolicies(entries);
 				fs.mkdirSync(path.dirname(sessionFile), { recursive: true });
 				fs.writeFileSync(sessionFile, `${[header, ...entries].map((entry) => JSON.stringify(entry)).join("\n")}\n`, "utf-8");
 			} else {
 				const entries = readSessionEntries(sessionFile);
-				if (sanitizeUnsafeThinkingBlocks(entries)) {
+				const sanitized = sanitizeUnsafeThinkingBlocks(entries);
+				const removedPolicy = removeInheritedSessionIndexPolicies(entries);
+				if (sanitized || removedPolicy) {
 					fs.writeFileSync(sessionFile, `${entries.map((entry) => JSON.stringify(entry)).join("\n")}\n`, "utf-8");
 				}
 			}

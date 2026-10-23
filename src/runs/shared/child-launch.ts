@@ -36,7 +36,7 @@ import { createCapturedChildHooks, withChildSessionErrorReporting } from "./chil
 import type { ChildTranscriptWriter } from "../../shared/child-transcript.ts";
 import type { ChildSessionLaunch, ChildSessionStorage } from "./child-session.ts";
 import { resolveRequiredChildExtensions, type RequiredChildExtensionSnapshot } from "../../shared/required-child-extensions.ts";
-import { resolveSessionIndexPolicy, type SessionIndexPolicyRequest } from "./session-index-policy.ts";
+import { resolveSessionIndexPolicy, sessionIndexPolicyProcessEnv, type SessionIndexPolicyRequest } from "./session-index-policy.ts";
 
 /** Environment variable pi-mcp-adapter reads for the tools a child may expose. */
 export const MCP_DIRECT_TOOLS_ENV = "MCP_DIRECT_TOOLS";
@@ -324,6 +324,7 @@ export function buildInProcessChildLaunch(input: BuildInProcessChildLaunchInput)
 	const taggedPrompt = input.systemPrompt !== undefined && input.systemPrompt !== null
 		? `<active_agent name="${escapeXmlAttr(input.childAgentName)}"/>\n\n${input.systemPrompt}`
 		: undefined;
+	const sessionIndexPolicy = resolveSessionIndexPolicy(input.childAgentName, input.sessionIndexPolicy);
 	const session: Omit<ChildSessionLaunch, "onExtensionError"> = {
 		cwd: input.cwd,
 		...(input.machine ? { machine: input.machine } : {}),
@@ -338,8 +339,10 @@ export function buildInProcessChildLaunch(input: BuildInProcessChildLaunchInput)
 		requiredExtensions: toolPlan.requiredExtensions,
 		ambientExtensions,
 		hooks: capturedHooks.hooks,
-		...(resolveSessionIndexPolicy(input.childAgentName, input.sessionIndexPolicy) ? { sessionIndexPolicy: resolveSessionIndexPolicy(input.childAgentName, input.sessionIndexPolicy) } : {}),
-		...(input.host === "runner" ? { processEnv: childProcessEnv(input, toolPlan) } : {}),
+		...(sessionIndexPolicy ? { sessionIndexPolicy } : {}),
+		...(input.host === "runner"
+			? { processEnv: { ...childProcessEnv(input, toolPlan), ...sessionIndexPolicyProcessEnv(sessionIndexPolicy) } }
+			: sessionIndexPolicy ? { processEnv: sessionIndexPolicyProcessEnv(sessionIndexPolicy) } : {}),
 		runtime: config,
 		noSkills: !input.inheritSkills,
 		noContextFiles: !input.inheritProjectContext,

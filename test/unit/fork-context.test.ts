@@ -5,6 +5,7 @@ import * as path from "node:path";
 import { describe, it } from "node:test";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { canPreferFork, canPreferForkFromSnapshot, createForkContextResolver, resolveSubagentContext } from "../../src/shared/fork-context.ts";
+import { ensureSessionIndexPolicy } from "../../src/runs/shared/session-index-policy.ts";
 
 function writeMinimalSessionFile(filePath: string, id = "session"): void {
 	fs.mkdirSync(path.dirname(filePath), { recursive: true });
@@ -159,6 +160,31 @@ describe("createForkContextResolver", () => {
 			assert.ok(childSessionFile);
 			assert.notEqual(childSessionFile, parentSessionFile);
 			assert.equal(fs.existsSync(childSessionFile), true);
+		} finally {
+			fs.rmSync(tempDir, { recursive: true, force: true });
+		}
+	});
+
+	it("does not copy the parent's session-index-policy marker into a fork", () => {
+		const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagents-fork-policy-"));
+		try {
+			const sessionDir = path.join(tempDir, "sessions");
+			const parent = SessionManager.create(tempDir, sessionDir);
+			parent.appendMessage({ role: "user", content: "parent prompt" });
+			parent.appendMessage({ role: "assistant", content: [{ type: "text", text: "parent response" }] });
+			ensureSessionIndexPolicy(parent, { reason: "review", source: "pi-subagents" });
+			const parentSessionFile = parent.getSessionFile();
+			const leafId = parent.getLeafId();
+			assert.ok(parentSessionFile);
+			assert.ok(leafId);
+
+			const resolver = createForkContextResolver({ getSessionFile: () => parentSessionFile, getLeafId: () => leafId }, "fork");
+			const childSessionFile = resolver.sessionFileForIndex(0);
+			assert.ok(childSessionFile);
+
+			const records = fs.readFileSync(childSessionFile, "utf-8").trim().split("\n").map((line) => JSON.parse(line) as Record<string, unknown>);
+			assert.equal(records.some((entry) => entry.type === "custom" && entry.customType === "session-index-policy"), false);
+			assert.equal((records[0] as { parentSession?: string }).parentSession, parentSessionFile);
 		} finally {
 			fs.rmSync(tempDir, { recursive: true, force: true });
 		}
