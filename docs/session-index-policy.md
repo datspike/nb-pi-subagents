@@ -4,7 +4,7 @@
 
 The host writes the policy as a `session-index-policy` custom entry through `SessionManager` before `createAgentSession()` starts. For a persisted child, the file is flushed at that point. The marker therefore exists in the new JSONL before the first provider request; a child extension may verify the same `session_id` during `before_provider_request`.
 
-In-process children share the parent process environment. Policy variables are cleared before each child startup and applied only while that child is loading, starting, or making a policy-sensitive turn. Those operations are serialized because `process.env` is process-global; the parent values are restored afterwards. External runner environments remove inherited policy variables before adding the policy selected for the current child.
+In-process children share the parent process environment. Policy variables are cleared before each child startup and applied only while that child is loading and starting; startup operations are serialized because `process.env` is process-global, and the parent values are restored afterwards. After startup, provider-turn validation uses the persisted JSONL marker rather than ambient policy variables, so nested child launches cannot wait on an outer model turn. External runner environments remove inherited policy variables before adding the policy selected for the current child.
 
 Forked sessions copy transcript entries, but an inherited `session-index-policy` entry is removed before the fork is used as a child session. Retained entries are re-linked around the removed marker, so the new child can write its own marker with its own `session_id` without leaving a dangling `parentId`. `parentSession` remains the SDK's lineage link.
 

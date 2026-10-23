@@ -362,6 +362,26 @@ describe("default child session factory", () => {
 		assert.deepEqual(bound, ["a", "b"]);
 	});
 
+	it("allows a nested in-process child during the outer model turn", async () => {
+		let factory!: ChildSessionFactory;
+		let nestedStarted = false;
+		const pi = stubPi({
+			prompt: async () => {
+				nestedStarted = true;
+				const nested = await factory.create(stubLaunch);
+				await nested.dispose();
+			},
+		});
+		factory = createDefaultChildSessionFactory({ loadPiCodingAgent: async () => pi });
+		const outer = await factory.create(stubLaunch);
+		await Promise.race([
+			outer.prompt("outer"),
+			new Promise<never>((_, reject) => setTimeout(() => reject(new Error("nested child prompt timed out")), 1_000)),
+		]);
+		assert.equal(nestedStarted, true);
+		await outer.dispose();
+	});
+
 	it("marks each child's loader as reloaded so pi resets its extension cache", async () => {
 		const flags: boolean[] = [];
 		const pi = stubPi();

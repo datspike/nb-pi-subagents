@@ -227,7 +227,7 @@ function prioritizeChildCommandRuntime<T extends { extensions: Array<{ path: str
 	return { ...result, extensions };
 }
 
-/** Serialize every policy-sensitive child operation because the host process has one shared `process.env`. */
+/** Serialize child startup because the host process has one shared `process.env`. */
 let loading: Promise<unknown> = Promise.resolve();
 let processEnvTail: Promise<void> = Promise.resolve();
 
@@ -599,10 +599,10 @@ export function createDefaultChildSessionFactory(options: DefaultChildSessionFac
 			}
 			const child: ChildSession = {
 				subscribe: (listener) => session.subscribe((event) => listener(event as unknown as ChildSessionEvent)),
-				prompt: (text) => withChildProcessEnv(launch, () => session.prompt(text)),
+				prompt: (text) => session.prompt(text),
 				...(commands ? { finishCommands: () => commands.finish() } : {}),
-				steer: (text) => withChildProcessEnv(launch, () => session.steer(text)),
-				followUp: (text) => withChildProcessEnv(launch, () => session.followUp(text)),
+				steer: (text) => session.steer(text),
+				followUp: (text) => session.followUp(text),
 				abort: () => session.abort(),
 				hasQueuedMessages: () => session.agent?.hasQueuedMessages?.() === true,
 				dispose: () => {
