@@ -170,9 +170,9 @@ describe("createForkContextResolver", () => {
 		try {
 			const sessionDir = path.join(tempDir, "sessions");
 			const parent = SessionManager.create(tempDir, sessionDir);
+			ensureSessionIndexPolicy(parent, { reason: "review", source: "pi-subagents" });
 			parent.appendMessage({ role: "user", content: "parent prompt" });
 			parent.appendMessage({ role: "assistant", content: [{ type: "text", text: "parent response" }] });
-			ensureSessionIndexPolicy(parent, { reason: "review", source: "pi-subagents" });
 			const parentSessionFile = parent.getSessionFile();
 			const leafId = parent.getLeafId();
 			assert.ok(parentSessionFile);
@@ -185,6 +185,11 @@ describe("createForkContextResolver", () => {
 			const records = fs.readFileSync(childSessionFile, "utf-8").trim().split("\n").map((line) => JSON.parse(line) as Record<string, unknown>);
 			assert.equal(records.some((entry) => entry.type === "custom" && entry.customType === "session-index-policy"), false);
 			assert.equal((records[0] as { parentSession?: string }).parentSession, parentSessionFile);
+			const firstEntry = records[1] as { parentId?: string };
+			assert.equal(firstEntry.parentId, undefined);
+			for (let index = 2; index < records.length; index++) {
+				assert.equal((records[index] as { parentId?: string }).parentId, (records[index - 1] as { id?: string }).id);
+			}
 		} finally {
 			fs.rmSync(tempDir, { recursive: true, force: true });
 		}

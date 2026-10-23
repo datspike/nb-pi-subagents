@@ -227,8 +227,9 @@ function prioritizeChildCommandRuntime<T extends { extensions: Array<{ path: str
 	return { ...result, extensions };
 }
 
-/** One launch at a time from env application through `session_start`, so parallel launches never observe each other's `processEnv` while their extensions load and start. */
+/** Serialize every policy-sensitive child operation because the host process has one shared `process.env`. */
 let loading: Promise<unknown> = Promise.resolve();
+let processEnvTail: Promise<void> = Promise.resolve();
 
 /**
  * pi caches extension factories per process and clears that cache only when a
@@ -249,6 +250,25 @@ function applyProcessEnv(values: Record<string, string | undefined> | undefined)
 		if (value === undefined) delete process.env[name];
 		else process.env[name] = value;
 	}
+}
+
+function withChildProcessEnv<T>(launch: ChildSessionLaunch, action: () => Promise<T>): Promise<T> {
+	const previous = processEnvTail;
+	let release!: () => void;
+	const gate = new Promise<void>((resolve) => { release = resolve; });
+	processEnvTail = previous.then(() => gate);
+	return previous.then(async () => {
+		const previousPolicyEnv = Object.fromEntries(SESSION_INDEX_POLICY_ENV_KEYS.map((key) => [key, process.env[key]]));
+		applyProcessEnv(sessionIndexPolicyProcessEnv(undefined));
+		applyProcessEnv(launch.processEnv);
+		if (launch.sessionIndexPolicy) applyProcessEnv(sessionIndexPolicyProcessEnv(launch.sessionIndexPolicy));
+		try {
+			return await action();
+		} finally {
+			applyProcessEnv(previousPolicyEnv);
+			release();
+		}
+	});
 }
 
 /**
@@ -490,10 +510,7 @@ export function createDefaultChildSessionFactory(options: DefaultChildSessionFac
 			};
 			const open = async () => {
 				const requiredPaths = new Set((launch.requiredExtensions ?? []).map(({ path }) => path));
-				const previousPolicyEnv = Object.fromEntries(SESSION_INDEX_POLICY_ENV_KEYS.map((key) => [key, process.env[key]]));
-				applyProcessEnv(sessionIndexPolicyProcessEnv(undefined));
-				applyProcessEnv(launch.processEnv);
-				try {
+				return withChildProcessEnv(launch, async () => {
 				if (!resetExtensionCacheOnReload(loader) && (launch.ambientExtensions || launch.extensionPaths.length)) launch.onExtensionError?.({ extensionPath: "<loader>", event: "load", error: new Error("pi's extension cache reset is unavailable; extensions loaded into this child share module state with other sessions in this process.") });
 				await loader.reload();
 				const loadErrors = requiredPaths.size > 0
@@ -560,9 +577,7 @@ export function createDefaultChildSessionFactory(options: DefaultChildSessionFac
 					throw new Error(`Required child extension failed during startup: ${requiredStartupErrors.join("; ")}`);
 				}
 				return session;
-				} finally {
-					applyProcessEnv(previousPolicyEnv);
-				}
+				});
 			};
 			const opened = loading.catch(() => {}).then(open);
 			loading = opened;
@@ -584,10 +599,10 @@ export function createDefaultChildSessionFactory(options: DefaultChildSessionFac
 			}
 			const child: ChildSession = {
 				subscribe: (listener) => session.subscribe((event) => listener(event as unknown as ChildSessionEvent)),
-				prompt: (text) => session.prompt(text),
+				prompt: (text) => withChildProcessEnv(launch, () => session.prompt(text)),
 				...(commands ? { finishCommands: () => commands.finish() } : {}),
-				steer: (text) => session.steer(text),
-				followUp: (text) => session.followUp(text),
+				steer: (text) => withChildProcessEnv(launch, () => session.steer(text)),
+				followUp: (text) => withChildProcessEnv(launch, () => session.followUp(text)),
 				abort: () => session.abort(),
 				hasQueuedMessages: () => session.agent?.hasQueuedMessages?.() === true,
 				dispose: () => {

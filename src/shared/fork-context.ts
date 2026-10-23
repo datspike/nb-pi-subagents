@@ -141,8 +141,21 @@ function readSessionEntries(sessionFile: string): BranchSessionEntry[] {
 }
 
 function removeInheritedSessionIndexPolicies(entries: BranchSessionEntry[]): boolean {
-	const retained = entries.filter((entry) => !(entry.type === "custom" && entry.customType === "session-index-policy"));
-	if (retained.length === entries.length) return false;
+	const removed = entries.filter((entry) => entry.type === "custom" && entry.customType === "session-index-policy");
+	if (removed.length === 0) return false;
+	const removedIds = new Set(removed.flatMap((entry) => entry.id ? [entry.id] : []));
+	const byId = new Map(entries.flatMap((entry) => entry.id ? [[entry.id, entry] as const] : []));
+	const retained = entries.filter((entry) => !removedIds.has(entry.id ?? ""));
+	for (const entry of retained) {
+		let parentId = entry.parentId;
+		const visited = new Set<string>();
+		while (parentId && removedIds.has(parentId) && !visited.has(parentId)) {
+			visited.add(parentId);
+			parentId = byId.get(parentId)?.parentId ?? null;
+		}
+		if (parentId) entry.parentId = parentId;
+		else delete entry.parentId;
+	}
 	entries.splice(0, entries.length, ...retained);
 	return true;
 }
