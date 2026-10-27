@@ -5,7 +5,7 @@ import type { AgentToolResult } from "@earendil-works/pi-agent-core";
 import type { ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import type { ChildSupervisorMetadata } from "../runs/shared/child-runtime-config.ts";
-import { INTERCOM_DETACH_REQUEST_EVENT, POLL_INTERVAL_MS, TEMP_ROOT_DIR, type ControlEvent, type IntercomEventBus, type SubagentState } from "../shared/types.ts";
+import { INTERCOM_DETACH_REQUEST_EVENT, POLL_INTERVAL_MS, TEMP_ROOT_DIR, type ControlEvent, type IntercomEventBus, type NestedRunSummary, type SubagentState } from "../shared/types.ts";
 import { writeAtomicJson } from "../shared/atomic-json.ts";
 import { shouldUseNativeFsWatch } from "../shared/watch-strategy.ts";
 import { MODEL_ONLY_CALL_GUIDANCE, MODEL_ONLY_TOOL } from "../shared/extension-context.ts";
@@ -615,6 +615,59 @@ function buildParentSupervisorTool(pi: ExtensionAPI, pending: Map<string, Pendin
 			}
 			throw new Error(`Unsupported supervisor action: ${input.action}`);
 		},
+	};
+}
+
+/** Resolve only this runtime's live mailboxes, retaining disappeared channels for one final drain.
+ * Demand probes do not consume that drain; only the transport's completed poll does.
+ */
+export function createOwnedSupervisorChannelDirs(state: SubagentState, getOwnerStates: () => Iterable<SubagentState>) {
+	const known = new Set<string>();
+	const drained = new WeakSet<object>();
+	return (): { dirs: string[]; retire: () => void } => {
+		const live = new Set<string>();
+		const terminal: object[] = [];
+		const include = (value: object, active: boolean): boolean => {
+			if (active) return true;
+			if (drained.has(value)) return false;
+			terminal.push(value);
+			return true;
+		};
+		const addNested = (runs: NestedRunSummary[] = []): void => {
+			for (const run of runs) {
+				if (include(run, run.state === "running" || run.state === "queued")) {
+					const agents = run.steps?.map(step => step.agent) ?? run.agents ?? (run.agent ? [run.agent] : []);
+					for (const [index, agent] of agents.entries()) live.add(resolveSupervisorChannelDir(run.id, agent, index));
+				}
+				addNested(run.children);
+			}
+		};
+		for (const owner of new Set([state, ...getOwnerStates()])) {
+			for (const run of owner.foregroundControls.values()) {
+				for (const child of run.activeChildren?.values() ?? []) live.add(resolveSupervisorChannelDir(run.runId, child.agent, child.index));
+				addNested(run.nestedChildren);
+			}
+			for (const run of owner.foregroundRuns?.values() ?? []) {
+				for (const child of run.children) {
+					if (include(child, child.status === "detached")) live.add(resolveSupervisorChannelDir(run.runId, child.agent, child.index));
+				}
+			}
+			for (const job of owner.asyncJobs.values()) {
+				addNested(job.nestedChildren);
+				if (!include(job, job.status === "queued" || job.status === "running")) continue;
+				if (job.steps?.length) {
+					for (const [index, child] of job.steps.entries()) live.add(resolveSupervisorChannelDir(job.asyncId, child.agent, child.index ?? index));
+				} else {
+					for (const [index, agent] of (job.agents ?? []).entries()) live.add(resolveSupervisorChannelDir(job.asyncId, agent, index));
+				}
+			}
+		}
+		const retiring = [...known].filter(dir => !live.has(dir));
+		for (const dir of live) known.add(dir);
+		return { dirs: [...known], retire: () => {
+			for (const dir of retiring) known.delete(dir);
+			for (const value of terminal) drained.add(value);
+		} };
 	};
 }
 

@@ -744,7 +744,7 @@ describe("supervisor ask registration", () => {
 				const handlers = new Map();
 				const tools = new Map();
 				const pi = new Proxy({
-					events: { on() { return () => {}; }, emit() {} },
+					events: { listeners: new Map(), on(name, fn) { this.listeners.set(name, [...(this.listeners.get(name) ?? []), fn]); return () => {}; }, emit(name, value) { for (const fn of this.listeners.get(name) ?? []) fn(value); } },
 					on(name, handler) { handlers.set(name, [...(handlers.get(name) ?? []), handler]); },
 					getAllTools() { return [...tools.keys()].map(name => ({ name })); },
 					registerTool(tool) { tools.set(tool.name, tool); },
@@ -768,11 +768,12 @@ describe("supervisor ask registration", () => {
 				stale = true;
 				// Exercise the production stale-context clearing path, not direct state assignment.
 				for (const handler of handlers.get("session_before_compact") ?? []) await handler({ reason: "threshold", signal: new AbortController().signal });
-				return { tool: tools.get("subagent_supervisor"), shutdown: async () => { for (const handler of handlers.get("session_shutdown") ?? []) await handler(); } };
+				return { tool: tools.get("subagent_supervisor"), register(runId) { pi.events.emit("subagent:async-started", { id: runId, agent: "worker", sessionId: sessionFile, mode: "single", asyncDir: path.join(root, runId) }); }, shutdown: async () => { for (const handler of handlers.get("session_shutdown") ?? []) await handler(); } };
 			}
 			function ask(owner) {
 				const id = randomUUID();
 				const runId = randomUUID();
+				runtime?.register(runId);
 				const dir = resolveSupervisorChannelDir(runId, "worker", 0);
 				channels.push(dir);
 				ensureSupervisorChannelDir(dir);
