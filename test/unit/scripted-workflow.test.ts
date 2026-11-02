@@ -108,12 +108,12 @@ describe("scripted workflow runtime", () => {
 				nativePromise.catch(() => undefined);
 				let customInspectorArgs;
 				console.log({ [Symbol.for("nodejs.util.inspect.custom")](depth, options, inspect) { customInspectorArgs = [options, inspect]; return "custom"; } });
-				let trapCaller = "not called";
-				await runs.run("proxied", new Proxy({ agent: "worker", task: "t" }, { ownKeys: function ownKeys(target) { trapCaller = ownKeys.caller; return Reflect.ownKeys(target); } }));
 				const callSiteValues = [];
-				Error.prepareStackTrace = (error, sites) => { for (const site of sites) callSiteValues.push(site, site.getFunction(), site.getThis()); return "trace"; };
+				const captureSites = (error, sites) => { for (const site of sites) callSiteValues.push(site, site.getFunction(), site.getThis()); return "trace"; };
+				for (const ErrorClass of [Error, thrown.constructor]) { try { ErrorClass.prepareStackTrace = captureSites; } catch {} }
 				console.log(new Error("stack first read by console"));
-				Error.prepareStackTrace = undefined;
+				void new Error("script stack").stack;
+				try { runs.run(2); } catch (error) { void error.stack; }
 				const routes = {
 					globalThis, runs, emit, "console.log": console.log, "state.get": state.get,
 					...Object.fromEntries(Object.keys(runs).map((name) => ["runs." + name, runs[name]])),
@@ -126,15 +126,14 @@ describe("scripted workflow runtime", () => {
 				return {
 					...Object.fromEntries(Object.entries(routes).map(([name, value]) => [name, realmOf(value)])),
 					"custom inspector": customInspectorArgs ? customInspectorArgs.map(realmOf).join("/") : "not called",
-					"proxy trap caller": trapCaller === null ? "hidden" : typeof trapCaller === "function" ? realmOf(trapCaller) : trapCaller,
-					"console call sites": callSiteValues.length === 0 ? "not called" : callSiteValues.filter(Boolean).every((value) => realmOf(value) === "EvalError") ? "EvalError" : "worker",
+					"stack trace hook": callSiteValues.length === 0 ? "locked" : callSiteValues.filter(Boolean).every((value) => realmOf(value) === "EvalError") ? "EvalError" : "worker",
 				};
 			`,
 		});
 		const value = result.value as Record<string, string>;
 		assert.deepEqual(
 			Object.entries(value).filter(([, realm]) => realm !== "EvalError"),
-			[["custom inspector", "not called"], ["proxy trap caller", "hidden"]],
+			[["custom inspector", "not called"], ["stack trace hook", "locked"]],
 			"every value must come from a realm whose Function cannot compile strings",
 		);
 		assert.ok(Object.keys(value).length > 25);
@@ -184,7 +183,7 @@ describe("scripted workflow runtime", () => {
 				values.child = await launched;
 				values.all = await runs.all([{ key: "all", agent: "worker", task: "t" }]);
 				values.lanes = await runs.lanes([{ key: "lane", stages: [{ key: "first", agent: "worker", task: "t" }] }]);
-				values.proxied = await runs.run("proxied", new Proxy({ agent: "worker", task: "t" }, { ownKeys: function ownKeys(target) { probeFrames(ownKeys); return Reflect.ownKeys(target); } }));
+				values.proxied = await runs.run("proxied", new Proxy({ agent: "worker", task: "t" }, { ownKeys: function ownKeys(target) { probeFrames(ownKeys); return Reflect.ownKeys(target); } })).then((value) => value, (error) => error);
 				values.status = await runs.status("child");
 				values.steer = await runs.steer("child", "guide");
 				values.host = await runs.host("check", { kind: "command", command: "true", timeoutMs: 1000 });
@@ -210,13 +209,15 @@ describe("scripted workflow runtime", () => {
 				values.callSites = callSites;
 				sweep("globalThis", globalThis, 3);
 				sweep("values", values, 4);
-				return { leaks, swept: seen.size, callers: callers.length, callSites: callSites.length };
+				return { leaks, swept: seen.size, callers: callers.length, visibleCallers: callers.filter((caller) => caller !== null).length, callSites: callSites.length };
 			`,
 		});
-		const value = result.value as { leaks: string[]; swept: number; callers: number; callSites: number };
+		const value = result.value as { leaks: string[]; swept: number; callers: number; visibleCallers: number; callSites: number };
 		assert.deepEqual(value.leaks, []);
 		assert.ok(value.swept > 500, `sweep reached only ${value.swept} values`);
-		assert.ok(value.callers >= 3 && value.callSites > 0, "callbacks the runtime invokes must have been probed");
+		assert.ok(value.callers >= 3, "callbacks the runtime invokes must have been probed");
+		assert.equal(value.callSites, 0, "Error.prepareStackTrace must stay locked in both realms");
+		assert.equal(value.visibleCallers, 0, "a script callback's .caller must not expose the runtime function that invoked it");
 	});
 
 	it("rejects import() before the script runs", async () => {
