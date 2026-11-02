@@ -12,7 +12,7 @@ import { getArtifactsDir } from "../../src/shared/artifacts.ts";
 import { SUBAGENT_CHILD_STATUS_EVENT, SUBAGENT_CONTROL_EVENT, SUBAGENT_CONTROL_INTERCOM_EVENT, type ControlEvent } from "../../src/shared/types.ts";
 import { ACTIVE_RUN_INDEX_DIR, updateActiveRunIndex } from "../../src/runs/background/active-run-index.ts";
 import { EXTERNAL_JOB_BRIDGE_REQUEST_DIR } from "../../src/runs/shared/external-job-bridge.ts";
-import { createNativeSupervisorChannel, ensureSupervisorChannelDir, resolveSupervisorChannelDir } from "../../src/intercom/native-supervisor-channel.ts";
+import { createNativeSupervisorChannel, createOwnedSupervisorChannelDirs, ensureSupervisorChannelDir, resolveSupervisorChannelDir } from "../../src/intercom/native-supervisor-channel.ts";
 import { SubagentFleetComponent } from "../../src/tui/fleet.ts";
 import { createNestedRoute, writeNestedEvent } from "../../src/runs/shared/nested-events.ts";
 import { resolveSubagentRunId } from "../../src/runs/background/run-id-resolver.ts";
@@ -149,7 +149,7 @@ function writeRunningAsyncStatus(runDir: string, runId: string, sessionId: strin
 	}), "utf-8");
 }
 
-function createNativeSupervisorHarness(sessionId: string) {
+function createNativeSupervisorHarness(sessionId: string, runId: string) {
 	const nativeState = createState();
 	(nativeState as { currentSessionId: string; lastUiContext: unknown }).currentSessionId = sessionId;
 	(nativeState as { supervisorOwnerSessionId: string }).supervisorOwnerSessionId = sessionId;
@@ -172,7 +172,10 @@ function createNativeSupervisorHarness(sessionId: string) {
 			sent.push({ customType: message.customType, options });
 		},
 	};
-	const channel = createNativeSupervisorChannel(pi as never, nativeState as never, { platform: "win32" });
+	nativeState.asyncJobs.set(runId, { asyncId: runId, status: "running", agents: ["worker"] } as never);
+	const channel = createNativeSupervisorChannel(pi as never, nativeState as never, {
+		platform: "win32", getChannelDirs: createOwnedSupervisorChannelDirs(nativeState as never, () => []),
+	});
 	return { channel, tools, sent };
 }
 
@@ -1643,7 +1646,7 @@ describe("async job tracker", { skip: !available ? "pi packages not available" :
 		const sessionId = `session-${Date.now()}`;
 		const runId = `run-${Date.now()}`;
 		const toolCallId = `call-${Date.now()}`;
-		const { channel, tools, sent } = createNativeSupervisorHarness(sessionId);
+		const { channel, tools, sent } = createNativeSupervisorHarness(sessionId, runId);
 		const { channelDir, requestId } = writeSupervisorRequest({ sessionId, runId, toolCallId });
 		try {
 			const runDir = path.join(asyncRoot, runId);
@@ -1678,7 +1681,7 @@ describe("async job tracker", { skip: !available ? "pi packages not available" :
 		const sessionId = `session-${Date.now()}`;
 		const runId = `run-${Date.now()}`;
 		const toolCallId = `call-${Date.now()}`;
-		const { channel, sent } = createNativeSupervisorHarness(sessionId);
+		const { channel, sent } = createNativeSupervisorHarness(sessionId, runId);
 		const { channelDir } = writeSupervisorRequest({ sessionId, runId, toolCallId });
 		try {
 			const runDir = path.join(asyncRoot, runId);
@@ -1712,7 +1715,7 @@ describe("async job tracker", { skip: !available ? "pi packages not available" :
 		const sessionId = `session-${Date.now()}`;
 		const runId = `run-${Date.now()}`;
 		const toolCallId = `call-${Date.now()}`;
-		const { channel, tools } = createNativeSupervisorHarness(sessionId);
+		const { channel, tools } = createNativeSupervisorHarness(sessionId, runId);
 		const { channelDir, requestId } = writeSupervisorRequest({ sessionId, runId, toolCallId });
 		try {
 			const runDir = path.join(asyncRoot, runId);
@@ -1787,7 +1790,7 @@ describe("async job tracker", { skip: !available ? "pi packages not available" :
 		const asyncRoot = createTempDir("pi-async-job-supervisor-replay-external-");
 		const sessionId = `session-${Date.now()}`;
 		const runId = `run-${Date.now()}`;
-		const { channel } = createNativeSupervisorHarness(sessionId);
+		const { channel } = createNativeSupervisorHarness(sessionId, runId);
 		try {
 			const runDir = path.join(asyncRoot, runId);
 			writeRunningAsyncStatus(runDir, runId, sessionId);

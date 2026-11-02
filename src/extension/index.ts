@@ -49,7 +49,7 @@ import { registerSlashCommands } from "../slash/slash-commands.ts";
 import { registerPromptTemplateDelegationBridge } from "../slash/prompt-template-bridge.ts";
 import { registerMainWatchdog } from "../watchdog/register-main.ts";
 import { registerSlashSubagentBridge } from "../slash/slash-bridge.ts";
-import { createNativeSupervisorChannel } from "../intercom/native-supervisor-channel.ts";
+import { createNativeSupervisorChannel, createOwnedSupervisorChannelDirs } from "../intercom/native-supervisor-channel.ts";
 import {
 	renderSupervisorReply,
 	renderSupervisorRequest,
@@ -384,9 +384,11 @@ export default function registerSubagentExtension(pi: ExtensionAPI): void {
 	// Every notice that wakes the parent goes through parentWake; the watchdog wakes only inside a run.
 	const parentWake = createParentWake(pi);
 	const wakingPi = { events: pi.events, sendMessage: parentWake.sendMessage };
+	// Owner states are created only by scheduled execution, which loads the executor first.
+	const getSupervisorOwnerStates = () => executor?.getCurrentSupervisorOwnerStates() ?? [];
 	const supervisorChannel = createNativeSupervisorChannel(pi, state, {
-		// Owner states are created only by scheduled execution, which loads the executor first.
-		getCurrentOwnerStates: () => executor?.getCurrentSupervisorOwnerStates() ?? [],
+		getChannelDirs: createOwnedSupervisorChannelDirs(state, getSupervisorOwnerStates),
+		getCurrentOwnerStates: getSupervisorOwnerStates,
 		parentWake,
 	});
 	const waitSubscriptionManager = createWaitSubscriptionManager(wakingPi, state);

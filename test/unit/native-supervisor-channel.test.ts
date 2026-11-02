@@ -8,6 +8,7 @@ import { afterEach, describe, it } from "node:test";
 import {
 	NATIVE_SUPERVISOR_TOOL_NAME,
 	createNativeSupervisorChannel,
+	createOwnedSupervisorChannelDirs,
 	ensureSupervisorChannelDir,
 	registerNativeSupervisorClient,
 	resolveSupervisorChannelDir,
@@ -1217,4 +1218,107 @@ describe("native supervisor channel", () => {
 
 		assert.deepEqual(fs.readdirSync(path.join(channelDir, "requests")), []);
 	});
+});
+
+describe("root supervisor mailbox scope", () => {
+	it("keeps mailbox identity across recovery, retained owners and parallel step projections", () => {
+		const state = makeState("owner", null);
+		const retained = makeState("owner", null);
+		state.asyncJobs.set("recovered", { asyncId: "recovered", status: "running", steps: [{ agent: "worker", index: 7 }] } as never);
+		retained.asyncJobs.set("scheduled", { asyncId: "scheduled", status: "queued", agents: ["advisor"] } as never);
+		state.foregroundRuns = new Map([["detached", { runId: "detached", children: [{ agent: "worker", index: 2, status: "detached" }] } as never]]);
+		const getDirs = createOwnedSupervisorChannelDirs(state, () => [retained]);
+		const expected = [resolveSupervisorChannelDir("recovered", "worker", 7), resolveSupervisorChannelDir("scheduled", "advisor", 0), resolveSupervisorChannelDir("detached", "worker", 2)].sort();
+		assert.deepEqual(getDirs().dirs.sort(), expected);
+		state.asyncJobs.clear(); retained.asyncJobs.clear(); state.foregroundRuns.clear();
+		assert.deepEqual(getDirs().dirs.sort(), expected, "demand probes cannot retire the final drain");
+		getDirs().retire();
+		assert.deepEqual(getDirs().dirs, []);
+	});
+
+	it("measures root scans before/after and delivers new, recovered and retained requests with replies", async (t) => {
+		const owner = randomUUID();
+		const ctx = { sessionManager: { getSessionId: () => owner } };
+		const state = makeState(owner, ctx);
+		const retained = makeState(owner, ctx);
+		const recovered = randomUUID();
+		state.asyncJobs.set(recovered, { asyncId: recovered, status: "running", agents: ["worker"] } as never);
+		const ownId = writeRequest({ sessionId: owner, runId: recovered });
+		for (let i = 0; i < 12; i++) writeRequest({ sessionId: randomUUID(), runId: randomUUID() });
+		const counts: unknown[] = [];
+		for (const scoped of [false, true]) {
+			const intervals = new Map<number, () => void>();
+			const notices: Array<{ details: { id: string } }> = [];
+			const tools = new Map<string, { execute(id: string, params: unknown): Promise<unknown> }>();
+			let watches = 0, closes = 0, scans = 0, reads = 0;
+			const readdir = fsDefault.readdirSync, readFile = fsDefault.readFileSync;
+			const channel = createNativeSupervisorChannel({
+				getAllTools: () => [], registerTool: (tool: { name: string; execute(id: string, params: unknown): Promise<unknown> }) => tools.set(tool.name, tool),
+				sendMessage: (m: { details: { id: string } }) => notices.push(m),
+			} as never, state, {
+				platform: "linux", getCurrentOwnerStates: () => [retained],
+				...(scoped ? { getChannelDirs: createOwnedSupervisorChannelDirs(state, () => [retained]) } : {}),
+				watch: (() => { watches++; return { on() {}, unref() {}, close() { closes++; } }; }) as never,
+				timers: { setInterval: ((fn: () => void, ms: number) => { intervals.set(ms, fn); return ms; }) as never, clearInterval: ((id: number) => intervals.delete(id)) as never, setImmediate, clearImmediate },
+			});
+			fsDefault.readdirSync = ((...args: Parameters<typeof fsDefault.readdirSync>) => { scans++; return (readdir as Function)(...args); }) as typeof readdir;
+			fsDefault.readFileSync = ((...args: Parameters<typeof fsDefault.readFileSync>) => { reads++; return (readFile as Function)(...args); }) as typeof readFile;
+			syncBuiltinESMExports();
+			try {
+				channel.start(); channel.activateTransport();
+				assert.equal(notices[0]?.details.id, ownId);
+				scans = 0; reads = 0;
+				intervals.get(scoped ? 250 : 5000)!();
+				counts.push({ scoped, watches, scans, reads });
+				if (scoped) {
+					assert.equal(watches, 0); assert.equal(scans, 1); assert.equal(reads, 0);
+					for (const target of [state, retained]) {
+						const runId = randomUUID();
+						target.asyncJobs.set(runId, { asyncId: runId, status: "running", agents: ["worker"] } as never);
+						channel.activateTransport(); // Mailbox does not exist yet.
+						const id = writeRequest({ sessionId: owner, runId });
+						intervals.get(250)!();
+						assert.ok(notices.some(n => n.details.id === id));
+						await tools.get(NATIVE_SUPERVISOR_TOOL_NAME)!.execute("reply", { action: "reply", replyTo: id, message: "Proceed" });
+						assert.equal(JSON.parse(readFile(replyFile(runId, id), "utf8")).message, "Proceed");
+					}
+					assert.equal(notices.length, 3, "foreign requests never surface");
+					state.asyncJobs.clear(); retained.asyncJobs.clear();
+					fs.unlinkSync(requestFile(recovered, ownId));
+					intervals.get(250)!();
+					assert.equal(intervals.size, 0, "final drain stops idle polling");
+				}
+			} finally {
+				channel.dispose();
+				fsDefault.readdirSync = readdir; fsDefault.readFileSync = readFile; syncBuiltinESMExports();
+			}
+			assert.equal(closes, watches); assert.equal(intervals.size, 0);
+		}
+		t.diagnostic(JSON.stringify(counts));
+	});
+});
+
+it("restarts scoped delivery after dispose without retaining pending requests or timers", () => {
+	const owner = randomUUID();
+	const state = makeState(owner, { sessionManager: { getSessionId: () => owner } });
+	const runId = randomUUID();
+	state.asyncJobs.set(runId, { asyncId: runId, status: "running", agents: ["worker"] } as never);
+	const notices: unknown[] = [];
+	const intervals = new Set<unknown>();
+	const channel = createNativeSupervisorChannel({ getAllTools: () => [], registerTool() {}, sendMessage(m: unknown) { notices.push(m); } } as never, state, {
+		getChannelDirs: createOwnedSupervisorChannelDirs(state, () => []),
+		timers: { setInterval: (() => { const id = { unref() {} }; intervals.add(id); return id; }) as never, clearInterval: ((id: unknown) => intervals.delete(id)) as never, setImmediate, clearImmediate },
+	});
+	try {
+		const first = writeRequest({ sessionId: owner, runId });
+		channel.start(); channel.activateTransport();
+		assert.equal(notices.length, 1);
+		channel.dispose();
+		assert.equal(channel.pending.size, 0); assert.equal(intervals.size, 0);
+		fs.unlinkSync(requestFile(runId, first));
+		const second = writeRequest({ sessionId: owner, runId });
+		channel.start(); channel.activateTransport();
+		assert.equal(notices.length, 2); assert.ok(channel.pending.has(second));
+	} finally { channel.dispose(); }
+	assert.equal(intervals.size, 0);
 });

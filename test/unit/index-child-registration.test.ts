@@ -530,6 +530,7 @@ describe("subagent extension child mode", () => {
 			import registerSubagentExtension from "./index.ts";
 			import { updateActiveRunIndex } from "./src/runs/background/active-run-index.ts";
 			import { ensureSupervisorChannelDir, resolveSupervisorChannelDir } from "./src/intercom/native-supervisor-channel.ts";
+			import { createNestedRoute, writeNestedEvent } from "./src/runs/shared/nested-events.ts";
 			import { DIRS, INTERCOM_DETACH_REQUEST_EVENT } from "./src/shared/types.ts";
 
 			const handlers = new Map();
@@ -567,6 +568,8 @@ describe("subagent extension child mode", () => {
 			};
 
 			try {
+				const route = createNestedRoute(runId);
+				writeNestedEvent(route, { type: "subagent.nested.started", ts: Date.now(), parentRunId: runId, child: { id: "nested-reviewer-run", parentRunId: runId, depth: 1, path: [{ runId }], state: "running", agent: "reviewer" } });
 				fs.mkdirSync(asyncDir, { recursive: true });
 				fs.writeFileSync(path.join(asyncDir, "status.json"), JSON.stringify({
 					runId, sessionId: runtimeSessionId, mode: "workflow", state: "running",
