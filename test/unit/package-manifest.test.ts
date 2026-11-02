@@ -114,6 +114,7 @@ test("published extension APIs use supported package entrypoints", async () => {
 	assert.equal(fs.existsSync(path.join(projectRoot, "async-retention-discovery-worker.mjs")), true);
 	assert.equal(packageJson.files?.includes("workflow-script-worker.cjs"), true, "published packages must include the file-backed workflow worker");
 	assert.equal(fs.existsSync(path.join(projectRoot, "workflow-script-worker.cjs")), true, "source installs must resolve a real workflow worker file");
+	assert.equal(packageJson.files?.includes("workflow-script-process.cjs"), true);
 	const entrySource = fs.readFileSync(path.join(projectRoot, "index.ts"), "utf-8");
 	assert.match(entrySource, /import type \{\} from "\.\/src\/types\/pi-runtime-compat\.d\.ts";/);
 	assert.equal(entrySource.includes('export { default } from "./src/extension/index.ts";'), false);
