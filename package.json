@@ -49,6 +49,8 @@
     "index.ts",
     "src/**/*.ts",
     "*.mjs",
+    "workflow-script-worker.cjs",
+    "workflow-script-process.cjs",
     "agents/",
     "skills/**/*",
     "prompts/**/*",
