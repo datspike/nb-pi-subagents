@@ -13,7 +13,7 @@ import { PI_CODING_AGENT_PACKAGE_ROOT_ENV } from "../../src/shared/utils.ts";
 function writePackage(root: string, name = PI_CODING_AGENT_PACKAGE, owner = "host"): void {
 	fs.mkdirSync(root, { recursive: true });
 	fs.writeFileSync(path.join(root, "package.json"), JSON.stringify({
-		name, type: "module", exports: { ".": { import: "./index.mjs" } }, bin: { pi: "./cli.mjs" },
+		name, version: "1.5.0", dependencies: {}, type: "module", exports: { ".": { import: "./index.mjs" } }, bin: { pi: "./cli.mjs" },
 	}));
 	fs.writeFileSync(path.join(root, "index.mjs"), `export const owner = ${JSON.stringify(owner)};\n`);
 	fs.writeFileSync(path.join(root, "cli.mjs"), "export {};\n");

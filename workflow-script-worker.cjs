@@ -961,7 +961,7 @@ function omitUndefinedWorkflowValues(value, seen = new Set()) {
   return normalized;
 }
 
-const scriptGlobals = { runs, Promise: workflowPromise, emit(value) { const unwrapped = unwrapRunsAllResults(value); const emittedValue = unwrapped === undefined ? null : omitUndefinedWorkflowValues(unwrapped); assertJsonValue(emittedValue); post({ type: "emit", value: emittedValue }); }, console: capturedConsole };
+const scriptGlobals = { runs, Promise: workflowPromise, emit(value) { const emittedValue = unwrapRunsAllResults(value); assertJsonValue(emittedValue); post({ type: "emit", value: emittedValue }); }, console: capturedConsole };
 if (stateEnabled) scriptGlobals.state = state;
 
 function deliver(callId, ok, encodedValue, errorText, errorKind) {

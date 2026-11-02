@@ -10,6 +10,16 @@
 - Reloading or switching the pi-subagents runtime now stops detached foreground children and records the stop so status and resume remain coherent.
 - Async result indexes are written before a result becomes readable, and per-run result leases prevent paused-result cleanup from deleting or overwriting a newer final result.
 - A child session no longer starts its final-drain timeout from an assistant `message_end`. The timeout now waits for non-retrying `agent_end` or `agent_settled`, so long `turn_end` handlers such as compaction repair are not aborted prematurely in foreground or background runs.
+
+### Security
+
+- Workflow scripts now construct their capabilities inside the restricted VM realm and lock stack-trace hooks before execution. Node scripts also run in a permission-restricted process without inherited credentials or startup flags; Bun retains the hardened in-process worker, not Node's process boundary. Ported from upstream sandbox fixes and #3104.
+
+### Fixed
+
+- Child SDK and CLI discovery now share the canonical host dependency tree, honor explicit roots, and defer invalid SDK errors until launch so management diagnostics stay available (upstream #2947).
+- Resume refuses managed-worktree children until their durable handoff has settled, and rejects a status file naming another run before stale-run repair can publish results (upstream #3092 and the applicable run-id guard from #3137).
+
 ## [0.76.1] - 2026-10-05
 
 ### Highlights
